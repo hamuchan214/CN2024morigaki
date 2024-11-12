@@ -7,6 +7,37 @@ HOST = '127.0.0.1'  # サーバーのIPアドレス
 PORT = 12345        # サーバーのポート番号
 
 # サーバーからのメッセージを受信して表示する
+# def receive_messages(client_socket, stdscr, messages):
+#     stdscr.scrollok(True)  # 画面のスクロールを許可
+
+#     while True:
+#         try:
+#             message = client_socket.recv(1024).decode('utf-8')
+#             if message:
+#                 messages.append(message)  # 受信したメッセージをリストの末尾に追加
+#                 stdscr.clear()  # 画面をクリア
+
+#                 # メッセージを上から順に表示（最大で "You:" の2行上まで表示）
+#                 for i, msg in enumerate(messages):
+#                     if i < curses.LINES - 3:  # "You:" の2行上まで表示
+#                         stdscr.addstr(5 + i, 0, msg[:curses.COLS-1])  # メッセージを表示（幅を制限）
+
+#                 # メッセージが多すぎる場合、古いメッセージを上に繰り上げる
+#                 if len(messages) > curses.LINES - 3:
+#                     messages.pop(0)  # 古いメッセージを削除
+
+#                 # "You:" とその入力欄を画面の最下部に固定
+#                 stdscr.addstr(curses.LINES - 2, 0, "You: ")  # 画面の最下部に "You:"
+#                 stdscr.refresh()  # 画面を更新
+#             else:
+#                 stdscr.addstr("\nServer has closed the connection.\n")
+#                 client_socket.close()
+#                 break
+#         except Exception as e:
+#             stdscr.addstr(f"\nAn error occurred: {e}\n")
+#             client_socket.close()
+#             break
+
 def receive_messages(client_socket, stdscr, messages):
     stdscr.scrollok(True)  # 画面のスクロールを許可
 
@@ -17,14 +48,15 @@ def receive_messages(client_socket, stdscr, messages):
                 messages.append(message)  # 受信したメッセージをリストの末尾に追加
                 stdscr.clear()  # 画面をクリア
 
-                # メッセージを上から順に表示（最大で "You:" の2行上まで表示）
-                for i, msg in enumerate(messages):
-                    if i < curses.LINES - 3:  # "You:" の2行上まで表示
-                        stdscr.addstr(5 + i, 0, msg[:curses.COLS-1])  # メッセージを表示（幅を制限）
+                # メッセージ表示の範囲を指定し、行数を制限
+                max_display_lines = curses.LINES - 10
+                start_idx = max(0, len(messages) - max_display_lines)
+                displayed_messages = messages[start_idx:]
 
-                # メッセージが多すぎる場合、古いメッセージを上に繰り上げる
-                if len(messages) > curses.LINES - 3:
-                    messages.pop(0)  # 古いメッセージを削除
+                # メッセージを上から順に表示（最大で "You:" の2行上まで表示）
+                for i, msg in enumerate(displayed_messages):
+                    if i < max_display_lines:
+                        stdscr.addstr(5 + i, 0, msg[:curses.COLS-1])  # メッセージを表示（幅を制限）
 
                 # "You:" とその入力欄を画面の最下部に固定
                 stdscr.addstr(curses.LINES - 2, 0, "You: ")  # 画面の最下部に "You:"
@@ -37,6 +69,7 @@ def receive_messages(client_socket, stdscr, messages):
             stdscr.addstr(f"\nAn error occurred: {e}\n")
             client_socket.close()
             break
+
 
 # サーバーに接続し、チャットを開始する
 def start_client(stdscr):
@@ -97,8 +130,8 @@ def start_client(stdscr):
                 messages.pop(0)  # 古いメッセージを削除
 
             # "You:" とその入力欄を画面の最下部に固定
-            stdscr.addstr(curses.LINES - 2, 0, "You: ")  # 画面の最下部に "You:"
-            stdscr.move(curses.LINES - 2, 5)  # 入力カーソルを "You:" の後に移動
+            stdscr.addstr(curses.LINES - 2, 0, "You: ")  # 画面の最下部に "You: "
+            stdscr.move(curses.LINES - 2, 5)  # 入力カーソルを "You: " の後に移動
             stdscr.refresh()
 
             curses.echo()  # 入力内容を表示
