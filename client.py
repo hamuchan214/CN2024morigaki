@@ -32,21 +32,25 @@ def start_client(stdscr):
     # ユーザー名の入力プロンプト表示
     stdscr.addstr(0, 0, "Enter your username: ")
     stdscr.refresh()
-    curses.echo()  # 入力内容を表示
-    username = stdscr.getstr(0, 19, 20).decode()  # ユーザー名を取得
-    curses.noecho()  # 入力表示を終了
-
-    # ルーム名の入力プロンプト表示
-    stdscr.addstr(1, 0, "Enter room name: ")
+    stdscr.addstr(1, 0, "> ")  # 改行して次の行で入力を促す
     stdscr.refresh()
     curses.echo()  # 入力内容を表示
-    room = stdscr.getstr(1, 15, 20).decode()  # ルーム名を取得
+    username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
+    curses.noecho()  # 入力表示を終了
+
+    # 改行してから、ルーム名の入力プロンプト表示
+    stdscr.addstr(2, 0, "Enter room name: ")
+    stdscr.refresh()
+    stdscr.addstr(3, 0, "> ")  # 次の行で入力を促す
+    stdscr.refresh()
+    curses.echo()  # 入力内容を表示
+    room = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
     curses.noecho()  # 入力表示を終了
 
     # サーバーに接続
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((HOST, PORT))
-    stdscr.addstr(2, 0, "Connected to the server.")
+    stdscr.addstr(4, 0, "Connected to the server.")
     stdscr.refresh()
 
     # メッセージ受信用のスレッドを開始
@@ -55,10 +59,10 @@ def start_client(stdscr):
     # メッセージ送信ループ
     try:
         while True:
-            stdscr.addstr(3, 0, "You: ")  # 常に同じ位置にプロンプトを表示
+            stdscr.addstr(5, 0, "You: ")  # 常に同じ位置にプロンプトを表示
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
-            msg_content = stdscr.getstr(3, 5, 100).decode()  # ユーザー入力を取得
+            msg_content = stdscr.getstr(5, 5, 100).decode()  # ユーザー入力を取得
             curses.noecho()  # 入力表示を終了
 
             if msg_content.lower() == "exit":
@@ -68,7 +72,7 @@ def start_client(stdscr):
             # サーバーに送信
             message = f"{username}:{room}:{msg_content}"
             client_socket.sendall(message.encode('utf-8'))
-            stdscr.move(3, 5)  # 入力欄のカーソル位置をリセット
+            stdscr.move(5, 5)  # 入力欄のカーソル位置をリセット
             stdscr.clrtoeol()  # 入力したメッセージを消去
             stdscr.refresh()
 
