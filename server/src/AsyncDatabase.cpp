@@ -54,9 +54,84 @@ std::future<std::vector<std::vector<std::string>>> AsyncDatabase::queryAsync(con
     });
 }
 
+// 非同期でユーザーを挿入
+std::future<void> AsyncDatabase::insertUser(const std::string& username, const std::string& password) {
+    return std::async(std::launch::async, [this, username, password]() {
+        std::string query = "INSERT INTO User (username, password) VALUES ('" + username + "', '" + password + "');";
+        executeAsync(query).get();
+    });
+}
+
+// 非同期でメッセージを挿入
+std::future<void> AsyncDatabase::insertMessage(int user_id, int room_id, const std::string& message) {
+    return std::async(std::launch::async, [this, user_id, room_id, message]() {
+        std::string query = "INSERT INTO Message (user_id, room_id, message) VALUES (" +
+                            std::to_string(user_id) + ", " +
+                            std::to_string(room_id) + ", '" +
+                            message + "');";
+        executeAsync(query).get();
+    });
+}
+
+// 非同期で全ユーザー名を取得
+std::future<std::vector<std::string>> AsyncDatabase::getAllUsernames() {
+    return std::async(std::launch::async, [this]() {
+        std::string query = "SELECT username FROM User;";
+        auto results = queryAsync(query).get();
+
+        std::vector<std::string> usernames;
+        for (const auto& row : results) {
+            if (!row.empty()) {
+                usernames.emplace_back(row[0]);
+            }
+        }
+        return usernames;
+    });
+}
+
+// 非同期で指定したユーザー情報を取得
+std::future<std::vector<std::vector<std::string>>> AsyncDatabase::getUserByUsername(const std::string& username) {
+    return std::async(std::launch::async, [this, username]() {
+        std::string query = "SELECT user_id, username, created_at FROM User WHERE username = '" + username + "';";
+        return queryAsync(query).get();
+    });
+}
+
+// 非同期で指定したルームにいるユーザーを取得
+std::future<std::vector<std::string>> AsyncDatabase::getUsersInRoom(int room_id) {
+    return std::async(std::launch::async, [this, room_id]() {
+        std::string query = 
+            "SELECT U.username FROM RoomUser RU "
+            "JOIN User U ON RU.user_id = U.user_id "
+            "WHERE RU.room_id = " + std::to_string(room_id) + ";";
+        auto results = queryAsync(query).get();
+
+        std::vector<std::string> usernames;
+        for (const auto& row : results) {
+            if (!row.empty()) {
+                usernames.emplace_back(row[0]);
+            }
+        }
+        return usernames;
+    });
+}
+
+// 非同期でメッセージ履歴を取得
+std::future<std::vector<std::vector<std::string>>> AsyncDatabase::getMessageHistory(int room_id) {
+    return std::async(std::launch::async, [this, room_id]() {
+        std::string query = 
+            "SELECT M.message_id, U.username, M.message, M.timestamp "
+            "FROM Message M "
+            "JOIN User U ON M.user_id = U.user_id "
+            "WHERE M.room_id = " + std::to_string(room_id) + " "
+            "ORDER BY M.room_id ASC, M.timestamp ASC;"; // room_idでソートした後、タイムスタンプで並び替え
+        return queryAsync(query).get();
+    });
+}
+
+
 // データベースの初期セットアップ
 void AsyncDatabase::setupDatabase() {
-    // 必要なテーブルを作成
     const std::vector<std::string> createTableQueries = {
         R"(
             CREATE TABLE IF NOT EXISTS User (
@@ -97,6 +172,6 @@ void AsyncDatabase::setupDatabase() {
     };
 
     for (const auto& query : createTableQueries) {
-        executeAsync(query).get(); // 同期的に実行して確実にセットアップ
+        executeAsync(query).get(); // 同期的に実行
     }
 }
