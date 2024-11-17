@@ -1,3 +1,5 @@
 .venv
 
-chat.db
+**.db
+**.o
+**.o
