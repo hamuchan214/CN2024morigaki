@@ -124,10 +124,11 @@ std::future<std::vector<std::vector<std::string>>> AsyncDatabase::getMessageHist
             "FROM Message M "
             "JOIN User U ON M.user_id = U.user_id "
             "WHERE M.room_id = " + std::to_string(room_id) + " "
-            "ORDER BY M.timestamp ASC;";
+            "ORDER BY M.room_id ASC, M.timestamp ASC;"; // room_idでソートした後、タイムスタンプで並び替え
         return queryAsync(query).get();
     });
 }
+
 
 // データベースの初期セットアップ
 void AsyncDatabase::setupDatabase() {
