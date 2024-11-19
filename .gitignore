@@ -1,1 +1,11 @@
+<<<<<<< HEAD
 .venv
+=======
+.venv
+
+**.db
+**.o
+**.o
+server/.DS_Store
+.DS_Store
+>>>>>>> origin/Tanaka
