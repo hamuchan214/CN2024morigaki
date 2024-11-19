@@ -124,6 +124,44 @@ void AsyncDatabase::setupDatabase(std::function<void(std::exception_ptr)> callba
     });
 }
 
+// 新しいユーザーを追加
+void AsyncDatabase::addUserAsync(const std::string& username, const std::string& password, std::function<void(std::exception_ptr)> callback) {
+    boost::asio::post(io_context, [this, username, password, callback]() {
+        try {
+            std::string query = "INSERT INTO User (username, password) VALUES ('" + username + "', '" + password + "');";
+            char* errMsg = nullptr;
+            int rc = sqlite3_exec(db, query.c_str(), nullptr, nullptr, &errMsg);
+            if (rc != SQLITE_OK) {
+                std::string error_message = errMsg ? std::string(errMsg) : "Unknown error";
+                sqlite3_free(errMsg);
+                throw std::runtime_error("SQLite Error: " + error_message);
+            }
+            callback(nullptr);
+        } catch (...) {
+            callback(std::current_exception());
+        }
+    });
+}
+
+// ユーザー情報を更新
+void AsyncDatabase::updateUserAsync(int user_id, const std::string& new_password, std::function<void(std::exception_ptr)> callback) {
+    boost::asio::post(io_context, [this, user_id, new_password, callback]() {
+        try {
+            std::string query = "UPDATE User SET password = '" + new_password + "' WHERE user_id = " + std::to_string(user_id) + ";";
+            char* errMsg = nullptr;
+            int rc = sqlite3_exec(db, query.c_str(), nullptr, nullptr, &errMsg);
+            if (rc != SQLITE_OK) {
+                std::string error_message = errMsg ? std::string(errMsg) : "Unknown error";
+                sqlite3_free(errMsg);
+                throw std::runtime_error("SQLite Error: " + error_message);
+            }
+            callback(nullptr);
+        } catch (...) {
+            callback(std::current_exception());
+        }
+    });
+}
+
 // ユーザーの削除
 void AsyncDatabase::deleteUserAsync(int user_id, std::function<void(std::exception_ptr)> callback) {
     boost::asio::post(io_context, [this, user_id, callback]() {
@@ -212,11 +250,63 @@ void AsyncDatabase::getMessagesByRoomAsync(int room_id, std::function<void(std::
     });
 }
 
+// ルームのメンバーを取得
+void AsyncDatabase::getRoomMembersAsync(int room_id, std::function<void(std::vector<std::vector<std::string>>, std::exception_ptr)> callback) {
+    boost::asio::post(io_context, [this, room_id, callback]() {
+        try {
+            std::vector<std::vector<std::string>> results;
+            std::string query = "SELECT User.user_id, User.username FROM RoomUser "
+                                "INNER JOIN User ON RoomUser.user_id = User.user_id "
+                                "WHERE RoomUser.room_id = " + std::to_string(room_id) + ";";
+            char* errMsg = nullptr;
+
+            auto callbackWrapper = [](void* data, int argc, char** argv, char** azColName) -> int {
+                auto* results = static_cast<std::vector<std::vector<std::string>>*>(data);
+                std::vector<std::string> row;
+                for (int i = 0; i < argc; i++) {
+                    row.emplace_back(argv[i] ? argv[i] : "NULL");
+                }
+                results->emplace_back(std::move(row));
+                return 0;
+            };
+
+            int rc = sqlite3_exec(db, query.c_str(), callbackWrapper, &results, &errMsg);
+            if (rc != SQLITE_OK) {
+                std::string error_message = errMsg ? std::string(errMsg) : "Unknown error";
+                sqlite3_free(errMsg);
+                throw std::runtime_error("SQLite Error: " + error_message);
+            }
+            callback(results, nullptr);
+        } catch (...) {
+            callback({}, std::current_exception());
+        }
+    });
+}
+
 // 新しいルームを作成
 void AsyncDatabase::createRoomAsync(const std::string& room_name, std::function<void(std::exception_ptr)> callback) {
     boost::asio::post(io_context, [this, room_name, callback]() {
         try {
             std::string query = "INSERT INTO Room (room_name) VALUES ('" + room_name + "');";
+            char* errMsg = nullptr;
+            int rc = sqlite3_exec(db, query.c_str(), nullptr, nullptr, &errMsg);
+            if (rc != SQLITE_OK) {
+                std::string error_message = errMsg ? std::string(errMsg) : "Unknown error";
+                sqlite3_free(errMsg);
+                throw std::runtime_error("SQLite Error: " + error_message);
+            }
+            callback(nullptr);
+        } catch (...) {
+            callback(std::current_exception());
+        }
+    });
+}
+
+// ルームを削除
+void AsyncDatabase::deleteRoomAsync(int room_id, std::function<void(std::exception_ptr)> callback) {
+    boost::asio::post(io_context, [this, room_id, callback]() {
+        try {
+            std::string query = "DELETE FROM Room WHERE room_id = " + std::to_string(room_id) + ";";
             char* errMsg = nullptr;
             int rc = sqlite3_exec(db, query.c_str(), nullptr, nullptr, &errMsg);
             if (rc != SQLITE_OK) {
