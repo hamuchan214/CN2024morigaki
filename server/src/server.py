@@ -140,7 +140,7 @@ class AsyncDatabase:
 
 
 class ChatServer:
-    def __init__(self, host='127.0.0.1', port=5000):
+    def __init__(self, host='127.0.0.1', port=6001):
         self.host = host
         self.port = port
         self.db = AsyncDatabase('chat.db')
@@ -163,45 +163,92 @@ class ChatServer:
         try:
             data = client_socket.recv(1024)  # データを受け取る
             if data:
+                print("data received")
                 # 受け取ったデータをJSON形式として処理
                 request = json.loads(data.decode())
                 action = request.get('action')
                 response = {}
 
+                print(f"Received request: {request}")
+
                 if action == 'add_user':
                     username = request.get('username')
                     password = request.get('password')
-                    # データベースへの追加処理
+                    # ユーザー追加処理
                     await self.db.add_user_async(username, password, self._send_response(client_socket, response))
                 elif action == 'get_user':
                     user_id = request.get('user_id')
                     # ユーザー情報取得処理
                     await self.db.get_user_async(user_id, self._send_response(client_socket, response))
-                # 他の処理も同様に追加
+                elif action == 'update_user':
+                    user_id = request.get('user_id')
+                    new_password = request.get('new_password')
+                    # ユーザー情報の更新処理
+                    await self.db.update_user_async(user_id, new_password, self._send_response(client_socket, response))
+                elif action == 'delete_user':
+                    user_id = request.get('user_id')
+                    # ユーザー削除処理
+                    await self.db.delete_user_async(user_id, self._send_response(client_socket, response))
+                elif action == 'create_room':
+                    room_name = request.get('room_name')
+                    # ルーム作成処理
+                    await self.db.create_room_async(room_name, self._send_response(client_socket, response))
+                elif action == 'get_rooms_by_user':
+                    user_id = request.get('user_id')
+                    # ユーザーのルーム取得処理
+                    await self.db.get_rooms_by_user_async(user_id, self._send_response(client_socket, response))
+                elif action == 'get_messages_by_room':
+                    room_id = request.get('room_id')
+                    # ルームのメッセージ取得処理
+                    await self.db.get_messages_by_room_async(room_id, self._send_response(client_socket, response))
+                elif action == 'get_room_members':
+                    room_id = request.get('room_id')
+                    # ルームメンバーの取得処理
+                    await self.db.get_room_members_async(room_id, self._send_response(client_socket, response))
+                elif action == 'send_message':
+                    user_id = request.get('user_id')
+                    room_id = request.get('room_id')
+                    message = request.get('message')
+                    # メッセージ送信処理
+                    await self.db.send_message_async(user_id, room_id, message, self._send_response(client_socket, response))
+                elif action == 'add_user_to_room':
+                    user_id = request.get('user_id')
+                    room_id = request.get('room_id')
+                    # ルームにユーザーを追加
+                    await self.db.add_user_to_room_async(user_id, room_id, self._send_response(client_socket, response))
+                elif action == 'remove_user_from_room':
+                    user_id = request.get('user_id')
+                    room_id = request.get('room_id')
+                    # ルームからユーザーを削除
+                    await self.db.remove_user_from_room_async(user_id, room_id, self._send_response(client_socket, response))
                 else:
-                    response = {'error': 'Invalid action'}
-                
-                # もしデータが無ければエラー応答を返す
-                if not response:
-                    response = {'error': 'No data received'}
-                client_socket.send(json.dumps(response).encode())  # 結果を送信
+                    response = {"error": "Invalid action"}
+                    print(response)
+                    self._send_response(client_socket, response)(None)
 
         except Exception as e:
-            response = {'error': str(e)}
-            client_socket.send(json.dumps(response).encode())  # エラー応答を送信
+            print(f"Error: {e}")
+            response = {"error": str(e)}
+            self._send_response(client_socket, response)(None)
         finally:
             client_socket.close()
 
     def _send_response(self, client_socket, response):
-        """レスポンスを非同期に送信する"""
-        def callback(data, error):
-            if error:
-                response['error'] = str(error)
-            else:
-                response['data'] = data
-            client_socket.send(json.dumps(response).encode())
-        return callback
+        """クライアントにJSONレスポンスを送信する"""
+        def send(data):
+            try:
+                json_data = json.dumps(data)
+                client_socket.sendall(json_data.encode())
+            except Exception as e:
+                print(f"Error sending response: {e}")
+        return send
 
-if __name__ == '__main__':
-    server = ChatServer()
-    server.start_server()
+
+# サーバー起動
+server = ChatServer()
+server.start_server()
+
+#  {'username': 'ham', 'room': '1', 'message': 'hi'}
+
+#1 {'add_user': {'username': 'ham', 'password': '1234'}}
+#2 

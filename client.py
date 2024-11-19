@@ -6,7 +6,7 @@ import json  # JSONの操作を追加
 
 # Server configuration
 HOST = "127.0.0.1"  # サーバーのIPアドレス
-PORT = 5000  # サーバーのポート番号
+PORT = 6001  # サーバーのポート番号
 
 
 def receive_messages(client_socket, stdscr, messages):
