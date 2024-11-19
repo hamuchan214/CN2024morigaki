@@ -1,133 +1,207 @@
-import socket
-import threading
 import sqlite3
-import datetime
+import asyncio
+import json
+import socket
+from functools import partial
 
-# Server configuration
-HOST = '127.0.0.1'
-PORT = 12345
-clients = []
-shutdown_flag = threading.Event()
+class AsyncDatabase:
+    def __init__(self, db_name):
+        self.db_name = db_name
+        self.db = sqlite3.connect(db_name, check_same_thread=False)
+        self.db.row_factory = sqlite3.Row  # Allows accessing columns by name
 
-# Initialize and setup the database
-def setup_database():
-    conn = sqlite3.connect('chat.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Rooms (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room_name TEXT UNIQUE NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            room_id INTEGER,
-            message TEXT,
-            timestamp TEXT,
-            FOREIGN KEY (user_id) REFERENCES Users (id),
-            FOREIGN KEY (room_id) REFERENCES Rooms (id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    def execute_async(self, query, callback):
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, self._execute, query, callback)
 
-# Store a message in the database
-def store_message(username, room, message):
-    conn = sqlite3.connect('chat.db')
-    cursor = conn.cursor()
+    def _execute(self, query, callback):
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query)
+            self.db.commit()
+            cursor.close()
+            callback(None)
+        except Exception as e:
+            callback(e)
+
+    def query_async(self, query, callback):
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, self._query, query, callback)
+
+    def _query(self, query, callback):
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            cursor.close()
+            callback(rows, None)
+        except Exception as e:
+            callback([], e)
+
+    def setup_database(self, callback):
+        queries = [
+            """CREATE TABLE IF NOT EXISTS User (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );""",
+            """CREATE TABLE IF NOT EXISTS Room (
+                room_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_name TEXT NOT NULL UNIQUE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );""",
+            """CREATE TABLE IF NOT EXISTS Message (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                room_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES User(user_id),
+                FOREIGN KEY(room_id) REFERENCES Room(room_id)
+            );""",
+            """CREATE TABLE IF NOT EXISTS RoomUser (
+                user_id INTEGER NOT NULL,
+                room_id INTEGER NOT NULL,
+                last_read_at DATETIME,
+                PRIMARY KEY(user_id, room_id),
+                FOREIGN KEY(user_id) REFERENCES User(user_id),
+                FOREIGN KEY(room_id) REFERENCES Room(room_id)
+            );"""
+        ]
+        for query in queries:
+            self.execute_async(query, partial(self._setup_callback, callback))
+
+    def _setup_callback(self, callback, error):
+        if error:
+            callback(error)
+        else:
+            callback(None)
+
+    def add_user_async(self, username, password, callback):
+        query = f"INSERT INTO User (username, password) VALUES ('{username}', '{password}');"
+        self.execute_async(query, callback)
+
+    def update_user_async(self, user_id, new_password, callback):
+        query = f"UPDATE User SET password = '{new_password}' WHERE user_id = {user_id};"
+        self.execute_async(query, callback)
+
+    def delete_user_async(self, user_id, callback):
+        query = f"DELETE FROM User WHERE user_id = {user_id};"
+        self.execute_async(query, callback)
+
+    def get_user_async(self, user_id, callback):
+        query = f"SELECT username, password FROM User WHERE user_id = {user_id};"
+        self.query_async(query, callback)
+
+    def get_rooms_by_user_async(self, user_id, callback):
+        query = f"""SELECT Room.room_id, Room.room_name, Room.created_at
+                    FROM RoomUser
+                    INNER JOIN Room ON RoomUser.room_id = Room.room_id
+                    WHERE RoomUser.user_id = {user_id};"""
+        self.query_async(query, callback)
+
+    def get_messages_by_room_async(self, room_id, callback):
+        query = f"""SELECT Message.message_id, User.username, Message.message, Message.timestamp
+                    FROM Message
+                    INNER JOIN User ON Message.user_id = User.user_id
+                    WHERE Message.room_id = {room_id}
+                    ORDER BY Message.timestamp ASC;"""
+        self.query_async(query, callback)
+
+    def get_room_members_async(self, room_id, callback):
+        query = f"""SELECT User.user_id, User.username
+                    FROM RoomUser
+                    INNER JOIN User ON RoomUser.user_id = User.user_id
+                    WHERE RoomUser.room_id = {room_id};"""
+        self.query_async(query, callback)
+
+    def create_room_async(self, room_name, callback):
+        query = f"INSERT INTO Room (room_name) VALUES ('{room_name}');"
+        self.execute_async(query, callback)
+
+    def delete_room_async(self, room_id, callback):
+        query = f"DELETE FROM Room WHERE room_id = {room_id};"
+        self.execute_async(query, callback)
+
+    def send_message_async(self, user_id, room_id, message, callback):
+        query = f"""INSERT INTO Message (user_id, room_id, message)
+                    VALUES ({user_id}, {room_id}, '{message}');"""
+        self.execute_async(query, callback)
+
+    def add_user_to_room_async(self, user_id, room_id, callback):
+        query = f"""INSERT OR IGNORE INTO RoomUser (user_id, room_id, last_read_at)
+                    VALUES ({user_id}, {room_id}, datetime('now'));"""
+        self.execute_async(query, callback)
+
+    def remove_user_from_room_async(self, user_id, room_id, callback):
+        query = f"DELETE FROM RoomUser WHERE user_id = {user_id} AND room_id = {room_id};"
+        self.execute_async(query, callback)
+
+
+class ChatServer:
+    def __init__(self, host='127.0.0.1', port=5000):
+        self.host = host
+        self.port = port
+        self.db = AsyncDatabase('chat.db')
     
-    # Get or create user
-    cursor.execute("INSERT OR IGNORE INTO Users (username) VALUES (?)", (username,))
-    cursor.execute("SELECT id FROM Users WHERE username = ?", (username,))
-    user_id = cursor.fetchone()[0]
-    
-    # Get or create room
-    cursor.execute("INSERT OR IGNORE INTO Rooms (room_name) VALUES (?)", (room,))
-    cursor.execute("SELECT id FROM Rooms WHERE room_name = ?", (room,))
-    room_id = cursor.fetchone()[0]
-    
-    # Insert message
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute("INSERT INTO Messages (user_id, room_id, message, timestamp) VALUES (?, ?, ?, ?)",
-                   (user_id, room_id, message, timestamp))
-    conn.commit()
-    conn.close()
-
-# Broadcast message to all clients in the room
-def broadcast(message, client_socket):
-    for client in clients:
-        if client != client_socket:
-            client.sendall(message.encode())
-
-# Handle individual client connection
-def handle_client(client_socket, client_address):
-    print(f"New connection from {client_address}")
-    clients.append(client_socket)
-
-    try:
+    def start_server(self):
+        """サーバーを起動して接続を待機"""
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((self.host, self.port))
+        server_socket.listen(5)
+        print(f'Server listening on {self.host}:{self.port}')
+        
         while True:
-            data = client_socket.recv(1024)  # Receive message from client
+            client_socket, client_address = server_socket.accept()
+            print(f"Connection from {client_address}")
+            # クライアントとの通信を非同期で処理
+            asyncio.run(self.handle_client(client_socket))
+
+    async def handle_client(self, client_socket):
+        """クライアントからのJSONデータを受け取り、処理する"""
+        try:
+            data = client_socket.recv(1024)  # データを受け取る
             if data:
-                message = data.decode()
-                print(f"Message from {client_address}: {message}")
+                # 受け取ったデータをJSON形式として処理
+                request = json.loads(data.decode())
+                action = request.get('action')
+                response = {}
+
+                if action == 'add_user':
+                    username = request.get('username')
+                    password = request.get('password')
+                    # データベースへの追加処理
+                    await self.db.add_user_async(username, password, self._send_response(client_socket, response))
+                elif action == 'get_user':
+                    user_id = request.get('user_id')
+                    # ユーザー情報取得処理
+                    await self.db.get_user_async(user_id, self._send_response(client_socket, response))
+                # 他の処理も同様に追加
+                else:
+                    response = {'error': 'Invalid action'}
                 
-                # Parse and store message in database
-                # Expected format: "<username>:<room>:<message>"
-                try:
-                    username, room, msg_content = message.split(":", 2)
-                    store_message(username, room, msg_content)
-                except ValueError:
-                    print("Invalid message format")
-                
-                broadcast(username + ": " + msg_content, client_socket)  # Send message to all clients
+                # もしデータが無ければエラー応答を返す
+                if not response:
+                    response = {'error': 'No data received'}
+                client_socket.send(json.dumps(response).encode())  # 結果を送信
+
+        except Exception as e:
+            response = {'error': str(e)}
+            client_socket.send(json.dumps(response).encode())  # エラー応答を送信
+        finally:
+            client_socket.close()
+
+    def _send_response(self, client_socket, response):
+        """レスポンスを非同期に送信する"""
+        def callback(data, error):
+            if error:
+                response['error'] = str(error)
             else:
-                break
-    finally:
-        client_socket.close()
-        clients.remove(client_socket)
-        print(f"Connection from {client_address} closed.")
+                response['data'] = data
+            client_socket.send(json.dumps(response).encode())
+        return callback
 
-# Monitor for shutdown command in a separate thread
-def monitor_shutdown():
-    global shutdown_flag
-    while not shutdown_flag.is_set():
-        command = input()
-        if command.lower() == "shutdown":
-            print("Shutting down the server...")
-            shutdown_flag.set()
-
-# Main server setup
-def start_server():
-    setup_database()  # Initialize the database
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((HOST, PORT))
-    server_socket.listen()
-    print(f"Server started on {HOST}:{PORT}")
-
-    # Start shutdown monitoring thread
-    shutdown_thread = threading.Thread(target=monitor_shutdown)
-    shutdown_thread.start()
-    
-    try:
-        while not shutdown_flag.is_set():
-            server_socket.settimeout(1.0)  # Check every second
-            try:
-                client_socket, client_address = server_socket.accept()
-                thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
-                thread.start()
-            except socket.timeout:
-                continue  # Check if shutdown_flag is set
-    finally:
-        server_socket.close()
-        print("Server has been closed.")
-
-if __name__ == "__main__":
-    start_server()
+if __name__ == '__main__':
+    server = ChatServer()
+    server.start_server()
