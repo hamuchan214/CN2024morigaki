@@ -4,41 +4,47 @@ import json
 import socket
 from functools import partial
 
+
 class AsyncDatabase:
     def __init__(self, db_name):
         self.db_name = db_name
-        self.db = sqlite3.connect(db_name, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row  # Allows accessing columns by name
+        self.connection = sqlite3.connect(db_name, check_same_thread=False)
+        self.connection.row_factory = sqlite3.Row  # Allows accessing columns by name
 
-    def execute_async(self, query, callback):
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, self._execute, query, callback)
+    async def execute_async(self, query):
+        """Execute a write operation asynchronously."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._execute, query)
 
-    def _execute(self, query, callback):
+    async def query_async(self, query):
+        """Execute a read operation asynchronously."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._query, query)
+
+    def _execute(self, query):
+        """Internal synchronous execution of a write operation."""
         try:
-            cursor = self.db.cursor()
+            cursor = self.connection.cursor()
             cursor.execute(query)
-            self.db.commit()
+            self.connection.commit()
             cursor.close()
-            callback(None)
+            return {"status": "success"}
         except Exception as e:
-            callback(e)
+            return {"status": "error", "message": str(e)}
 
-    def query_async(self, query, callback):
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, self._query, query, callback)
-
-    def _query(self, query, callback):
+    def _query(self, query):
+        """Internal synchronous execution of a read operation."""
         try:
-            cursor = self.db.cursor()
+            cursor = self.connection.cursor()
             cursor.execute(query)
             rows = cursor.fetchall()
             cursor.close()
-            callback(rows, None)
+            return {"status": "success", "data": [dict(row) for row in rows]}
         except Exception as e:
-            callback([], e)
+            return {"status": "error", "message": str(e)}
 
-    def setup_database(self, callback):
+    async def setup_database(self):
+        """Initialize database schema."""
         queries = [
             """CREATE TABLE IF NOT EXISTS User (
                 user_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,17 +76,30 @@ class AsyncDatabase:
             );"""
         ]
         for query in queries:
-            self.execute_async(query, partial(self._setup_callback, callback))
+            result = await self.execute_async(query)
+            if result["status"] == "error":
+                return result
+        return {"status": "success"}
 
-    def _setup_callback(self, callback, error):
-        if error:
-            callback(error)
-        else:
-            callback(None)
-
-    def add_user_async(self, username, password, callback):
+    async def add_user(self, username, password):
+        """Add a new user asynchronously."""
         query = f"INSERT INTO User (username, password) VALUES ('{username}', '{password}');"
-        self.execute_async(query, callback)
+        loop = asyncio.get_running_loop()
+
+        def execute_and_fetch_lastrowid():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query)
+                self.connection.commit()
+                user_id = cursor.lastrowid  # Fetch the last inserted row ID
+                cursor.close()
+                return {"status": "success", "user_id": user_id}
+            except sqlite3.IntegrityError:
+                return {"status": "error", "message": "Username already exists"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        return await loop.run_in_executor(None, execute_and_fetch_lastrowid)
 
     def update_user_async(self, user_id, new_password, callback):
         query = f"UPDATE User SET password = '{new_password}' WHERE user_id = {user_id};"
@@ -144,111 +163,60 @@ class ChatServer:
         self.host = host
         self.port = port
         self.db = AsyncDatabase('chat.db')
-    
-    def start_server(self):
-        """サーバーを起動して接続を待機"""
+
+    async def start(self):
+        """Start the server."""
+        setup_result = await self.db.setup_database()
+        if setup_result["status"] == "error":
+            print(f"Database setup failed: {setup_result['message']}")
+            return
+        print("Database setup completed successfully.")
+
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind((self.host, self.port))
         server_socket.listen(5)
-        print(f'Server listening on {self.host}:{self.port}')
-        
+        print(f"Server listening on {self.host}:{self.port}")
+
         while True:
-            client_socket, client_address = server_socket.accept()
+            client_socket, client_address = await asyncio.get_running_loop().run_in_executor(
+                None, server_socket.accept
+            )
             print(f"Connection from {client_address}")
-            # クライアントとの通信を非同期で処理
-            asyncio.run(self.handle_client(client_socket))
+            asyncio.create_task(self.handle_client(client_socket))
 
     async def handle_client(self, client_socket):
-        """クライアントからのJSONデータを受け取り、処理する"""
+        """Handle client requests."""
         try:
-            data = client_socket.recv(1024)  # データを受け取る
+            data = await asyncio.get_running_loop().run_in_executor(None, client_socket.recv, 1024)
             if data:
-                print("data received")
-                # 受け取ったデータをJSON形式として処理
                 request = json.loads(data.decode())
-                action = request.get('action')
-                response = {}
-
                 print(f"Received request: {request}")
 
-                if action == 'add_user':
-                    username = request.get('username')
-                    password = request.get('password')
-                    # ユーザー追加処理
-                    await self.db.add_user_async(username, password, self._send_response(client_socket, response))
-                elif action == 'get_user':
-                    user_id = request.get('user_id')
-                    # ユーザー情報取得処理
-                    await self.db.get_user_async(user_id, self._send_response(client_socket, response))
-                elif action == 'update_user':
-                    user_id = request.get('user_id')
-                    new_password = request.get('new_password')
-                    # ユーザー情報の更新処理
-                    await self.db.update_user_async(user_id, new_password, self._send_response(client_socket, response))
-                elif action == 'delete_user':
-                    user_id = request.get('user_id')
-                    # ユーザー削除処理
-                    await self.db.delete_user_async(user_id, self._send_response(client_socket, response))
-                elif action == 'create_room':
-                    room_name = request.get('room_name')
-                    # ルーム作成処理
-                    await self.db.create_room_async(room_name, self._send_response(client_socket, response))
-                elif action == 'get_rooms_by_user':
-                    user_id = request.get('user_id')
-                    # ユーザーのルーム取得処理
-                    await self.db.get_rooms_by_user_async(user_id, self._send_response(client_socket, response))
-                elif action == 'get_messages_by_room':
-                    room_id = request.get('room_id')
-                    # ルームのメッセージ取得処理
-                    await self.db.get_messages_by_room_async(room_id, self._send_response(client_socket, response))
-                elif action == 'get_room_members':
-                    room_id = request.get('room_id')
-                    # ルームメンバーの取得処理
-                    await self.db.get_room_members_async(room_id, self._send_response(client_socket, response))
-                elif action == 'send_message':
-                    user_id = request.get('user_id')
-                    room_id = request.get('room_id')
-                    message = request.get('message')
-                    # メッセージ送信処理
-                    await self.db.send_message_async(user_id, room_id, message, self._send_response(client_socket, response))
-                elif action == 'add_user_to_room':
-                    user_id = request.get('user_id')
-                    room_id = request.get('room_id')
-                    # ルームにユーザーを追加
-                    await self.db.add_user_to_room_async(user_id, room_id, self._send_response(client_socket, response))
-                elif action == 'remove_user_from_room':
-                    user_id = request.get('user_id')
-                    room_id = request.get('room_id')
-                    # ルームからユーザーを削除
-                    await self.db.remove_user_from_room_async(user_id, room_id, self._send_response(client_socket, response))
-                else:
-                    response = {"error": "Invalid action"}
-                    print(response)
-                    self._send_response(client_socket, response)(None)
+                action = request.get('action')
+                response = await self.route_request(action, request)
 
+                client_socket.sendall(json.dumps(response).encode())
         except Exception as e:
-            print(f"Error: {e}")
-            response = {"error": str(e)}
-            self._send_response(client_socket, response)(None)
+            print(f"Error handling client: {e}")
+            response = {"status": "error", "message": str(e)}
+            client_socket.sendall(json.dumps(response).encode())
         finally:
             client_socket.close()
 
-    def _send_response(self, client_socket, response):
-        """クライアントにJSONレスポンスを送信する"""
-        def send(data):
-            try:
-                json_data = json.dumps(data)
-                client_socket.sendall(json_data.encode())
-            except Exception as e:
-                print(f"Error sending response: {e}")
-        return send
+    async def route_request(self, action, request):
+        """Route client actions to the appropriate database methods."""
+        if action == 'add_user':
+            username = request.get('username')
+            password = request.get('password')
+            return await self.db.add_user(username, password)
+        else:
+            return {"status": "error", "message": "Invalid action"}
 
 
-# サーバー起動
-server = ChatServer()
-server.start_server()
-
-#  {'username': 'ham', 'room': '1', 'message': 'hi'}
-
-#1 {'add_user': {'username': 'ham', 'password': '1234'}}
-#2 
+if __name__ == "__main__":
+    server = ChatServer()
+    try:
+        asyncio.run(server.start())
+    except KeyboardInterrupt:
+        print("Server shutting down.")
