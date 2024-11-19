@@ -1,10 +1,12 @@
 import socket
 import threading
 import curses  # cursesライブラリを使用
+import json  # JSONの操作を追加
+
 
 # Server configuration
 HOST = "127.0.0.1"  # サーバーのIPアドレス
-PORT = 12345  # サーバーのポート番号
+PORT = 5000  # サーバーのポート番号
 
 
 def receive_messages(client_socket, stdscr, messages):
@@ -12,18 +14,23 @@ def receive_messages(client_socket, stdscr, messages):
 
     while True:
         try:
-            message = client_socket.recv(1024).decode("utf-8")
+            message = client_socket.recv(1024)  # バイトデータで受信
             if message:
-                messages.append(message)  # 受信したメッセージをリストの末尾に追加
+                try:
+                    message = message.decode("utf-8")  # バイトデータを文字列にデコード
+                    data = json.loads(message)  # JSON形式で受信
+                    messages.append(data.get("message", ""))
+                except json.JSONDecodeError:
+                    messages.append("Error: Invalid JSON received")
+
                 stdscr.clear()  # 画面をクリア
 
                 # メッセージ表示の範囲を指定し、行数を制限
                 max_display_lines = curses.LINES - 7
-                print(curses.LINES)
                 start_idx = max(0, len(messages) - max_display_lines)
                 displayed_messages = messages[start_idx:]
 
-                # メッセージを上から順に表示（最大で "You:" の2行上まで表示）
+                # メッセージを上から順に表示
                 for i, msg in enumerate(displayed_messages):
                     if i < max_display_lines:
                         stdscr.addstr(
@@ -127,10 +134,15 @@ def start_client(stdscr):
 
             # サーバーに送信
             try:
-                message = f"{username}:{room}:{msg_content}"
+                # メッセージをJSON形式で送信
+                message = {
+                    "username": username,
+                    "room": room,
+                    "message": msg_content
+                }
                 client_socket.sendall(
-                    message.encode("utf-8")
-                )  # ソケットが開いていることを確認して送信
+                    json.dumps(message).encode("utf-8")  # バイトデータとして送信
+                )
             except BrokenPipeError:
                 stdscr.addstr("\nConnection lost. Unable to send message.\n")
                 stdscr.refresh()

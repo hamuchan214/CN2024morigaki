@@ -181,6 +181,36 @@ void AsyncDatabase::deleteUserAsync(int user_id, std::function<void(std::excepti
     });
 }
 
+void AsyncDatabase::getUserAsync(int user_id, std::function<void(std::vector<std::string>, std::exception_ptr)> callback) {
+    boost::asio::post(io_context, [this, user_id, callback]() {
+        try {
+            std::vector<std::string> result;
+            std::string query = "SELECT username, password FROM users WHERE id = " + std::to_string(user_id) + ";";
+            char* errMsg = nullptr;
+
+            auto callbackWrapper = [](void* data, int argc, char** argv, char** azColName) -> int {
+                auto* result = static_cast<std::vector<std::string>*>(data);
+                for (int i = 0; i < argc; i++) {
+                    result->emplace_back(argv[i] ? argv[i] : "NULL");
+                }
+                return 0;
+            };
+
+            int rc = sqlite3_exec(db, query.c_str(), callbackWrapper, &result, &errMsg);
+            if (rc != SQLITE_OK) {
+                std::string error_message = errMsg ? std::string(errMsg) : "Unknown error";
+                sqlite3_free(errMsg);
+                throw std::runtime_error("SQLite Error: " + error_message);
+            }
+            callback(result, nullptr);
+        } catch (...) {
+            callback({}, std::current_exception());
+        }
+    });
+}
+
+
+
 // ユーザーが参加しているルームの一覧を取得
 void AsyncDatabase::getRoomsByUserAsync(int user_id, std::function<void(std::vector<std::vector<std::string>>, std::exception_ptr)> callback) {
     boost::asio::post(io_context, [this, user_id, callback]() {
