@@ -1,36 +1,59 @@
-#include "AsyncDatabase.hpp"
 #include <iostream>
+#include <boost/asio.hpp>
+#include "AsyncDatabase.hpp"
 
 int main() {
     try {
-        // データベースインスタンスの作成
-        AsyncDatabase db("chat_app.db");
+        // Boost Asio IOコンテキスト
+        boost::asio::io_context io_context;
+
+        // データベースインスタンス作成
+        AsyncDatabase db(io_context, "test_chat.db");
 
         // データベースのセットアップ
-        db.setupDatabase();
-
-        // ユーザーを追加
-        auto insertFuture = db.executeAsync(R"(
-            INSERT INTO User (username, password) VALUES ('Alice', 'password123');
-        )");
-        insertFuture.get(); // 非同期処理の完了を待つ
-
-        // データ取得
-        auto queryFuture = db.queryAsync(R"(
-            SELECT * FROM User;
-        )");
-
-        // 結果を表示
-        auto results = queryFuture.get();
-        for (const auto& row : results) {
-            for (const auto& col : row) {
-                std::cout << col << " ";
+        db.setupDatabase([](std::exception_ptr ex) {
+            if (ex) {
+                try {
+                    std::rethrow_exception(ex);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error in setupDatabase: " << e.what() << std::endl;
+                }
+            } else {
+                std::cout << "Database setup completed successfully." << std::endl;
             }
-            std::cout << std::endl;
-        }
+        });
 
+        // サンプルクエリを実行
+        db.executeAsync("INSERT INTO User (username, password) VALUES ('user1', 'pass1');", 
+            [](std::exception_ptr ex) {
+                if (ex) {
+                    try {
+                        std::rethrow_exception(ex);
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error in executeAsync: " << e.what() << std::endl;
+                    }
+                } else {
+                    std::cout << "Query executed successfully: User1 added." << std::endl;
+                }
+            });
+
+        db.executeAsync("INSERT INTO Room (room_name) VALUES ('General');", 
+            [](std::exception_ptr ex) {
+                if (ex) {
+                    try {
+                        std::rethrow_exception(ex);
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error in executeAsync: " << e.what() << std::endl;
+                    }
+                } else {
+                    std::cout << "Query executed successfully: Room added." << std::endl;
+                }
+            });
+
+        // 非同期操作が完了するまで待機
+        io_context.run();
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "Exception in main: " << e.what() << std::endl;
     }
 
     return 0;
