@@ -3,6 +3,8 @@ import asyncio
 import json
 import socket
 from functools import partial
+import hashlib
+import time
 
 
 class AsyncDatabase:
@@ -80,6 +82,31 @@ class AsyncDatabase:
             if result["status"] == "error":
                 return result
         return {"status": "success"}
+
+    async def login(self, username, password):
+        """Login a user asynchronously."""
+        query = "SELECT id, password FROM users WHERE username = ?"
+        
+        def authenticate():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, (username,))
+                row = cursor.fetchone()
+                cursor.close()
+                if not row:
+                    return {"status": "error", "message": "Invalid username or password"} 
+                
+                user_id, stored_password = row
+                hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                if hashed_password == stored_password:
+                    session_id = self.server.create_session(user_id)
+                    return {"status": "success", "session_id": session_id}
+                else:
+                    return {"status": "error", "message": "Invalid username or password"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        return await asyncio.get_running_loop().run_in_executor(self.executor, authenticate)
 
     async def add_user(self, username, password):
         """Add a new user asynchronously."""
@@ -163,6 +190,13 @@ class ChatServer:
         self.host = host
         self.port = port
         self.db = AsyncDatabase('chat.db')
+        self.loop = asyncio.get_event_loop()
+        self.sessions = {}
+        
+    def create_session(self, user_id):
+        session_id = hashlib.sha256(f"{user_id}{time.time()}".encode()).hexdigest()
+        self.sessions[session_id] = user_id
+        return session_id
 
     async def start(self):
         """Start the server."""
