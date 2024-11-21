@@ -78,3 +78,104 @@ class AsyncDatabase:
             if result["status"] == "error":
                 return result
         return {"status": "success"}
+
+    async def login(self, username, password):
+        """Login a user asynchronously."""
+        query = "SELECT id, password FROM users WHERE username = ?"
+        
+        def authenticate():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, (username,))
+                row = cursor.fetchone()
+                cursor.close()
+                if not row:
+                    return {"status": "error", "message": "Invalid username or password"} 
+                
+                user_id, stored_password = row
+                hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                if hashed_password == stored_password:
+                    session_id = self.server.create_session(user_id)
+                    return {"status": "success", "session_id": session_id}
+                else:
+                    return {"status": "error", "message": "Invalid username or password"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        return await asyncio.get_running_loop().run_in_executor(self.executor, authenticate)
+
+    async def add_user(self, username, password):
+        """Add a new user asynchronously."""
+        query = f"INSERT INTO User (username, password) VALUES ('{username}', '{password}');"
+        loop = asyncio.get_running_loop()
+
+        def execute_and_fetch_lastrowid():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query)
+                self.connection.commit()
+                user_id = cursor.lastrowid  # Fetch the last inserted row ID
+                cursor.close()
+                return {"status": "success", "user_id": user_id}
+            except sqlite3.IntegrityError:
+                return {"status": "error", "message": "Username already exists"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        return await loop.run_in_executor(None, execute_and_fetch_lastrowid)
+
+    def update_user_async(self, user_id, new_password, callback):
+        query = f"UPDATE User SET password = '{new_password}' WHERE user_id = {user_id};"
+        self.execute_async(query, callback)
+
+    def delete_user_async(self, user_id, callback):
+        query = f"DELETE FROM User WHERE user_id = {user_id};"
+        self.execute_async(query, callback)
+
+    def get_user_async(self, user_id, callback):
+        query = f"SELECT username, password FROM User WHERE user_id = {user_id};"
+        self.query_async(query, callback)
+
+    def get_rooms_by_user_async(self, user_id, callback):
+        query = f"""SELECT Room.room_id, Room.room_name, Room.created_at
+                    FROM RoomUser
+                    INNER JOIN Room ON RoomUser.room_id = Room.room_id
+                    WHERE RoomUser.user_id = {user_id};"""
+        self.query_async(query, callback)
+
+    def get_messages_by_room_async(self, room_id, callback):
+        query = f"""SELECT Message.message_id, User.username, Message.message, Message.timestamp
+                    FROM Message
+                    INNER JOIN User ON Message.user_id = User.user_id
+                    WHERE Message.room_id = {room_id}
+                    ORDER BY Message.timestamp ASC;"""
+        self.query_async(query, callback)
+
+    def get_room_members_async(self, room_id, callback):
+        query = f"""SELECT User.user_id, User.username
+                    FROM RoomUser
+                    INNER JOIN User ON RoomUser.user_id = User.user_id
+                    WHERE RoomUser.room_id = {room_id};"""
+        self.query_async(query, callback)
+
+    def create_room_async(self, room_name, callback):
+        query = f"INSERT INTO Room (room_name) VALUES ('{room_name}');"
+        self.execute_async(query, callback)
+
+    def delete_room_async(self, room_id, callback):
+        query = f"DELETE FROM Room WHERE room_id = {room_id};"
+        self.execute_async(query, callback)
+
+    def send_message_async(self, user_id, room_id, message, callback):
+        query = f"""INSERT INTO Message (user_id, room_id, message)
+                    VALUES ({user_id}, {room_id}, '{message}');"""
+        self.execute_async(query, callback)
+
+    def add_user_to_room_async(self, user_id, room_id, callback):
+        query = f"""INSERT OR IGNORE INTO RoomUser (user_id, room_id, last_read_at)
+                    VALUES ({user_id}, {room_id}, datetime('now'));"""
+        self.execute_async(query, callback)
+
+    def remove_user_from_room_async(self, user_id, room_id, callback):
+        query = f"DELETE FROM RoomUser WHERE user_id = {user_id} AND room_id = {room_id};"
+        self.execute_async(query, callback)

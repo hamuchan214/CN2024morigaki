@@ -17,16 +17,16 @@ class ChatServer:
     def create_session(self, user_id):
         session_id = generate_session_id(user_id)
         exception_time = time.time() + 3600
-        self.sessions[session_id] = user_id
+        self.sessions[session_id] = (user_id, exception_time)
         return session_id
     
     #セッションの有効期限を確認
     def validate_session(self, session_id):
-        """
-        Validate the given session ID.
-        :param session_id: セッションID
-        :return: セッションが有効ならユーザーIDを返し、無効なら None を返す
-        """
+        ###
+        #alidate the given session ID.
+        #param session_id: セッションID
+        #return: セッションが有効ならユーザーIDを返し、無効なら None を返す
+        ###
         session = self.sessions.get(session_id)
         if session:
             user_id, exception_time = session
@@ -82,5 +82,18 @@ class ChatServer:
             username = request.get('username')
             password = request.get('password')
             return await self.db.add_user(username, password)
+        
+        elif action == 'login':
+            username = request.get('username')
+            password = request.get('password')
+            login_result = await self.db.login(username, password)
+        
+            if login_result["status"] == "success":
+                user_id = login_result["user_id"]
+                session_id = self.create_session(user_id)
+                return {"status": "success", "session_id": session_id}
+            else:
+                return login_result
+        
         else:
             return {"status": "error", "message": "Invalid action"}
