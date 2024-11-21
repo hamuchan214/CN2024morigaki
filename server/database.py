@@ -138,8 +138,16 @@ class AsyncDatabase:
 
 
     def update_user_async(self, user_id, new_password, callback):
-        query = f"UPDATE User SET password = '{new_password}' WHERE user_id = {user_id};"
-        self.execute_async(query, callback)
+        hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+        query = f"UPDATE User SET password = '{hashed_password}' WHERE user_id = {user_id};"
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query)
+            self.connection.commit()
+            cursor.close()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def delete_user_async(self, user_id, callback):
         query = f"DELETE FROM User WHERE user_id = {user_id};"
