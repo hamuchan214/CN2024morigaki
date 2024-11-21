@@ -8,6 +8,7 @@ class AsyncDatabase:
         self.db_name = db_name
         self.connection = sqlite3.connect(db_name, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row  # Allows accessing columns by name
+        self.server = None
 
     async def execute_async(self, query):
         """Execute a write operation asynchronously."""
@@ -81,7 +82,7 @@ class AsyncDatabase:
 
     async def login(self, username, password):
         """Login a user asynchronously."""
-        query = "SELECT id, password FROM users WHERE username = ?"
+        query = "SELECT user_id, password FROM User WHERE username = ?"
         
         def authenticate():
             try:
@@ -89,24 +90,35 @@ class AsyncDatabase:
                 cursor.execute(query, (username,))
                 row = cursor.fetchone()
                 cursor.close()
+                
+                print(f"Database returned row: {row}")  # デバッグ出力
+
                 if not row:
                     return {"status": "error", "message": "Invalid username or password"} 
                 
                 user_id, stored_password = row
+                print(f"user_id: {user_id}, stored_password: {stored_password}")  # デバッグ出力
+
                 hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                print(f"hashed_password: {hashed_password}")  # デバッグ出力
+
                 if hashed_password == stored_password:
                     session_id = self.server.create_session(user_id)
-                    return {"status": "success", "session_id": session_id}
+                    print(f"Session created: {session_id}")  # デバッグ出力
+                    return {"status": "success", "user_id": user_id,"session_id": session_id}
                 else:
                     return {"status": "error", "message": "Invalid username or password"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
-        return await asyncio.get_running_loop().run_in_executor(self.executor, authenticate)
+
+        return await asyncio.get_running_loop().run_in_executor(None, authenticate)
+
 
     async def add_user(self, username, password):
-        """Add a new user asynchronously."""
-        query = f"INSERT INTO User (username, password) VALUES ('{username}', '{password}');"
+        # ハッシュ化されたパスワードを生成
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        query = f"INSERT INTO User (username, password) VALUES ('{username}', '{hashed_password}');"
         loop = asyncio.get_running_loop()
 
         def execute_and_fetch_lastrowid():
@@ -123,6 +135,7 @@ class AsyncDatabase:
                 return {"status": "error", "message": str(e)}
 
         return await loop.run_in_executor(None, execute_and_fetch_lastrowid)
+
 
     def update_user_async(self, user_id, new_password, callback):
         query = f"UPDATE User SET password = '{new_password}' WHERE user_id = {user_id};"

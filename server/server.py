@@ -11,6 +11,7 @@ class ChatServer:
         self.host = host
         self.port = port
         self.db = AsyncDatabase('chat.db')
+        self.db.server = self
         self.sessions = {}
 
     #セッションを作成
@@ -18,6 +19,7 @@ class ChatServer:
         session_id = generate_session_id(user_id)
         exception_time = time.time() + 3600
         self.sessions[session_id] = (user_id, exception_time)
+        print(f"Session created: {self.sessions}")
         return session_id
     
     #セッションの有効期限を確認
