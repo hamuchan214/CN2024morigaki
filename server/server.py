@@ -27,7 +27,7 @@ class ChatServer:
         self.host = host
         self.port = port
         self.db = AsyncDatabase('chat.db')
-        self.db.server = self
+        self.db.server = self #todo:直す database.pyに処理がまたがってるので修正する
         self.sessions = {}
         self.logger = setup_logger()
 
@@ -41,11 +41,11 @@ class ChatServer:
     
     #セッションの有効期限を確認
     def validate_session(self, session_id):
-        ###
-        #alidate the given session ID.
-        #param session_id: セッションID
-        #return: セッションが有効ならユーザーIDを返し、無効なら None を返す
-        ###
+        """
+        alidate the given session ID.
+        param session_id: セッションID
+        return: セッションが有効ならユーザーIDを返し、無効なら None を返す
+        """
         session = self.sessions.get(session_id)
         if session:
             user_id, exception_time = session
@@ -131,6 +131,6 @@ class ChatServer:
             user_id = request.get('user_id')
             message = request.get('message')
             return await self.db.add_message(room_id, user_id, message)
-        
+
         else:
             return {"status": "error", "message": "Invalid action"}

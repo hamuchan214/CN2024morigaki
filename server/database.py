@@ -137,7 +137,7 @@ class AsyncDatabase:
         return await loop.run_in_executor(None, execute_and_fetch_lastrowid)
 
 
-    def update_user_async(self, user_id, new_password, callback):
+    async def update_user_async(self, user_id, new_password, callback):
         hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
         query = f"UPDATE User SET password = '{hashed_password}' WHERE user_id = {user_id};"
         try:
