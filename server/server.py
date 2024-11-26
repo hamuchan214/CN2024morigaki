@@ -113,10 +113,6 @@ class ChatServer:
                 return {"status": "success", "session_id": session_id}
             else:
                 return login_result
-            
-        elif action == 'create_room':
-            room_name = request.get('room_name')
-            return await self.db.create_room(room_name)
         
         elif action == 'get_rooms_by_user':
             user_id = request.get('user_id')
