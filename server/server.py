@@ -127,10 +127,40 @@ class ChatServer:
             return await self.db.get_messages_by_room(room_id)
         
         elif action == 'add_message':
+            # Extract parameters from the request
+            session_id = request.get('session_id')
             room_id = request.get('room_id')
-            user_id = request.get('user_id')
             message = request.get('message')
-            return await self.db.add_message(room_id, user_id, message)
+
+            # Validate session ID and retrieve user ID
+            user_id = self.validate_session(session_id)
+            if not user_id:
+                return {"status": "error", "message": "Invalid or expired session"}
+
+            # Save the message to the database
+            save_result = await self.db.save_message_async(user_id, room_id, message)
+
+            if save_result["status"] == "success":
+                return {"status": "success", "message_id": save_result["message_id"]}
+            else:
+                return {"status": "error", "message": save_result["message"]}
+
+        elif action == 'create_room':
+            session_id = request.get('session_id')
+            room_name = request.get('room_name')
+
+            # Validate session ID and retrieve user ID
+            user_id = self.validate_session(session_id)
+            if not user_id:
+                return {"status": "error", "message": "Invalid or expired session"}
+
+            # Create the room in the database
+            create_room_result = await self.db.create_room_async(room_name)
+
+            if create_room_result["status"] == "success":
+                return {"status": "success", "room_id": create_room_result["room_id"]}
+            else:
+                return {"status": "error", "message": create_room_result["message"]}
 
         else:
             return {"status": "error", "message": "Invalid action"}

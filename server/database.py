@@ -149,6 +149,28 @@ class AsyncDatabase:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    async def save_message_async(self, user_id, room_id, message, callback):
+        query = f"""
+            INSERT INTO Message (user_id, room_id, message)
+            VALUES ({user_id}, {room_id}, '{message}');
+        """
+        params = (user_id, room_id, message)
+        
+        async def execute_and_return_message_id():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query,params)
+                self.connection.commit()
+                message_id = cursor.lastrowid
+                cursor.close()
+                return {"status": "success", "message_id": message_id}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+            except sqlite3.IntegrityError:
+                return {"status": "error", "message": "Invalid user_id or room_id"}
+
+        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_message_id)
+
     def delete_user_async(self, user_id, callback):
         query = f"DELETE FROM User WHERE user_id = {user_id};"
         self.execute_async(query, callback)
@@ -179,9 +201,23 @@ class AsyncDatabase:
                     WHERE RoomUser.room_id = {room_id};"""
         self.query_async(query, callback)
 
-    def create_room_async(self, room_name, callback):
-        query = f"INSERT INTO Room (room_name) VALUES ('{room_name}');"
-        self.execute_async(query, callback)
+    async def create_room_async(self, room_name, callback):
+        query = f"INSERT INTO Room (room_name) VALUES (?)"
+        
+        async def execute_and_return_room_id():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, (room_name,))
+                self.connection.commit()
+                room_id = cursor.lastrowid
+                cursor.close()
+                return {"status": "success", "room_id": room_id}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+            except sqlite3.IntegrityError:
+                return {"status": "error", "message": "Room name already exists"}
+
+        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_room_id)
 
     def delete_room_async(self, room_id, callback):
         query = f"DELETE FROM Room WHERE room_id = {room_id};"
