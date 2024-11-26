@@ -54,6 +54,17 @@ def receive_messages(client_socket, stdscr, messages):
 def start_client(stdscr):
     stdscr.clear()  # 画面をクリア
 
+    # サーバーに接続
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client_socket.connect((HOST, PORT))
+    except Exception as e:
+        stdscr.addstr(f"Error connecting to server: {e}\n")
+        stdscr.refresh()
+        return
+
+    client_socket.sendall(json.dumps("").encode("utf-8"))
+
     # ユーザー名の入力プロンプト表示
     stdscr.addstr(0, 0, "Enter your username: ")
     stdscr.refresh()
@@ -61,6 +72,25 @@ def start_client(stdscr):
     stdscr.refresh()
     curses.echo()  # 入力内容を表示
     username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
+    curses.noecho()  # 入力表示を終了
+
+    # ユーザー名をサーバーデータベースで検索
+    search_user = {"action": "get_user", "user_id": username}
+    client_socket.send(json.dumps(search_user).encode("utf-8"))
+
+    isExist = client_socket.recv(1024)
+
+    # 改行してから、ルーム名の入力プロンプト表示
+    stdscr.addstr(2, 0, "Enter your password: ")
+    stdscr.refresh()
+    stdscr.addstr(3, 0, "> ")  # 次の行で入力を促す
+    stdscr.refresh()
+    curses.echo()  # 入力内容を表示
+    password = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
+    if isExist:
+        client_socket.send()
+        correct_pass = client_socket.recv(1024)
+
     curses.noecho()  # 入力表示を終了
 
     # 改行してから、ルーム名の入力プロンプト表示
@@ -71,15 +101,6 @@ def start_client(stdscr):
     curses.echo()  # 入力内容を表示
     room = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
     curses.noecho()  # 入力表示を終了
-
-    # サーバーに接続
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        client_socket.connect((HOST, PORT))
-    except Exception as e:
-        stdscr.addstr(f"Error connecting to server: {e}\n")
-        stdscr.refresh()
-        return
 
     # メッセージ表示領域の管理
     messages = []  # メッセージを保持するリスト
@@ -135,11 +156,7 @@ def start_client(stdscr):
             # サーバーに送信
             try:
                 # メッセージをJSON形式で送信
-                message = {
-                    "username": username,
-                    "room": room,
-                    "message": msg_content
-                }
+                message = {"username": username, "room": room, "message": msg_content}
                 client_socket.sendall(
                     json.dumps(message).encode("utf-8")  # バイトデータとして送信
                 )
