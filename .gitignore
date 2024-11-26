@@ -8,4 +8,10 @@
 **.o
 server/.DS_Store
 .DS_Store
+<<<<<<< HEAD
+>>>>>>> origin/Tanaka
+=======
+server/__pycache__/database.cpython-312.pyc
+server/__pycache__/server.cpython-312.pyc
+server/__pycache__/utils.cpython-312.pyc
 >>>>>>> origin/Tanaka
