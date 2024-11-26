@@ -19,6 +19,7 @@ def send_request(action, data):
         return {"status": "error", "message": str(e)}
 
 # 検証用のコード
+# 検証用のコード
 if __name__ == "__main__":
     username = "test_user"
     password = "test_password"
@@ -38,3 +39,31 @@ if __name__ == "__main__":
         print(f"Session ID: {session_id}")
     else:
         print("Login failed.")
+        exit()
+
+    # 3. チャットルームの作成
+    print("Creating room...")
+    room_name = "Test Room"
+    create_room_response = send_request("create_room", {"session_id": session_id, "room_name": room_name})
+    print(f"Response: {create_room_response}")
+
+    if create_room_response["status"] == "success":
+        room_id = create_room_response["room_id"]
+        print(f"Room ID: {room_id}")
+    else:
+        print("Failed to create room.")
+        exit()
+
+    # 4. メッセージの送信
+    print("Sending message...")
+    message_content = "Hello, this is a test message."
+    add_message_response = send_request(
+        "add_message",
+        {"session_id": session_id, "room_id": room_id, "message": message_content}
+    )
+    print(f"Response: {add_message_response}")
+
+    if add_message_response["status"] == "success":
+        print("Message sent successfully.")
+    else:
+        print("Failed to send message.")

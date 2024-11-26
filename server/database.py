@@ -137,9 +137,43 @@ class AsyncDatabase:
         return await loop.run_in_executor(None, execute_and_fetch_lastrowid)
 
 
-    def update_user_async(self, user_id, new_password, callback):
-        query = f"UPDATE User SET password = '{new_password}' WHERE user_id = {user_id};"
-        self.execute_async(query, callback)
+    async def update_user_async(self, user_id, new_password, callback):
+        hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+        query = f"UPDATE User SET password = '{hashed_password}' WHERE user_id = {user_id};"
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query)
+            self.connection.commit()
+            cursor.close()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def save_message_async(self, user_id, room_id, message):
+        query = """
+            INSERT INTO Message (user_id, room_id, message)
+            VALUES (?, ?, ?);
+        """
+        params = (user_id, room_id, message)
+        loop = asyncio.get_running_loop()
+
+        def execute_and_return_message_id():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, params)
+                self.connection.commit()
+                message_id = cursor.lastrowid
+                cursor.close()
+                return {"status": "success", "message_id": message_id}
+            except sqlite3.IntegrityError:
+                return {"status": "error", "message": "Invalid user_id or room_id"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        # 非同期に同期関数を実行
+        result = await loop.run_in_executor(None, execute_and_return_message_id)
+        return result
+
 
     def delete_user_async(self, user_id, callback):
         query = f"DELETE FROM User WHERE user_id = {user_id};"
@@ -171,9 +205,26 @@ class AsyncDatabase:
                     WHERE RoomUser.room_id = {room_id};"""
         self.query_async(query, callback)
 
-    def create_room_async(self, room_name, callback):
-        query = f"INSERT INTO Room (room_name) VALUES ('{room_name}');"
-        self.execute_async(query, callback)
+    async def create_room_async(self, room_name):
+        """Asynchronously create a chat room."""
+        query = "INSERT INTO Room (room_name) VALUES (?)"
+
+        def execute_and_return_room_id():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, (room_name,))
+                self.connection.commit()
+                room_id = cursor.lastrowid
+                cursor.close()
+                return {"status": "success", "room_id": room_id}
+            except sqlite3.IntegrityError:  # Handle duplicate room name error
+                return {"status": "error", "message": "Room name already exists"}
+            except Exception as e:  # General exception handling
+                return {"status": "error", "message": str(e)}
+
+        # Run the database operation in a separate thread
+        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_room_id)
+
 
     def delete_room_async(self, room_id, callback):
         query = f"DELETE FROM Room WHERE room_id = {room_id};"
