@@ -1,6 +1,7 @@
 import sqlite3
 import asyncio
 import hashlib
+import uuid
 
 
 class AsyncDatabase:
@@ -8,7 +9,6 @@ class AsyncDatabase:
         self.db_name = db_name
         self.connection = sqlite3.connect(db_name, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row  # Allows accessing columns by name
-        self.server = None
 
     async def execute_async(self, query):
         """Execute a write operation asynchronously."""
@@ -103,7 +103,7 @@ class AsyncDatabase:
                 print(f"hashed_password: {hashed_password}")  # デバッグ出力
 
                 if hashed_password == stored_password:
-                    session_id = self.server.create_session(user_id)
+                    session_id = str(uuid.uuid4())
                     print(f"Session created: {session_id}")  # デバッグ出力
                     return {"status": "success", "user_id": user_id,"session_id": session_id}
                 else:
