@@ -183,12 +183,42 @@ class AsyncDatabase:
         query = f"SELECT username, password FROM User WHERE user_id = {user_id};"
         self.query_async(query, callback)
 
-    def get_rooms_by_user_async(self, user_id, callback):
+    async def get_rooms_by_user_async(self, user_id, callback):
+        """
+        Get a list of rooms the user belongs to asynchronously.
+        
+        :param user_id: ID of the user
+        :param callback: A callback function to handle the result
+        """
         query = f"""SELECT Room.room_id, Room.room_name, Room.created_at
                     FROM RoomUser
                     INNER JOIN Room ON RoomUser.room_id = Room.room_id
-                    WHERE RoomUser.user_id = {user_id};"""
-        self.query_async(query, callback)
+                    WHERE RoomUser.user_id = ?;"""
+        try:
+            # Run the query in an asynchronous executor
+            def query_rooms():
+                cursor = self.connection.cursor()
+                cursor.execute(query, (user_id,))
+                rooms = cursor.fetchall()
+                cursor.close()
+                return rooms
+
+            # Await the result of the query
+            rooms = await asyncio.get_running_loop().run_in_executor(None, query_rooms)
+
+            # Convert the rooms to a structured format
+            room_list = [
+                {"room_id": room[0], "room_name": room[1], "created_at": room[2]}
+                for room in rooms
+            ]
+
+            # Pass the result to the callback
+            await callback({"status": "success", "rooms": room_list})
+        
+        except Exception as e:
+            # Pass the error to the callback
+            await callback({"status": "error", "message": str(e)})
+
 
     def get_messages_by_room_async(self, room_id, callback):
         query = f"""SELECT Message.message_id, User.username, Message.message, Message.timestamp
