@@ -49,6 +49,7 @@ class ChatServer:
         self.port = port
         self.db = AsyncDatabase('chat.db')
         self.sessions = {}
+        self.room_users = {}
         self.logger = setup_logger()
 
     def create_session(self, user_id):
@@ -69,6 +70,40 @@ class ChatServer:
             else:
                 del self.sessions[session_id]
         return None
+
+    async def initialize_user_rooms(self, user_id, client_socket):
+        """
+        Initialize user rooms.
+        """
+        rooms = await self.db.get_rooms_by_user_async(user_id)
+        for room_id in rooms:
+            if room_id not in self.room_users:
+                self.room_users[room_id] = []
+            self.room_users[room_id].append(client_socket)
+            
+    async def handle_user_disconnect(self, client_socket):
+        """
+        Remove a disconnected user's socket from all rooms.
+        """
+        for room_id, sockets in list(self.room_users.items()):
+            if client_socket in sockets:
+                sockets.remove(client_socket)
+                if not sockets:  # ルームが空になったら削除
+                    del self.room_users[room_id]
+                    
+    async def broadcast_message_to_room(self, room_id, message, sender_socket):
+        """
+        Broadcast a message to all members of a room except the sender.
+        """
+        if room_id in self.room_users:
+            for user_socket in self.room_users[room_id]:
+                if user_socket != sender_socket:
+                    try:
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, user_socket.sendall, message.encode()
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Failed to send message to room {room_id}: {e}")
 
     async def start(self):
         """Start the server."""
@@ -92,7 +127,9 @@ class ChatServer:
             asyncio.create_task(self.handle_client(client_socket))
 
     async def handle_client(self, client_socket):
-        """Handle client requests."""
+        """
+        Handle client requests.
+        """
         try:
             data = await asyncio.get_running_loop().run_in_executor(None, client_socket.recv, 1024)
             if data:
@@ -100,7 +137,7 @@ class ChatServer:
                 self.logger.debug(f"Received request: {request}")
 
                 action = request.get('action')
-                response = await self.route_request(action, request)
+                response = await self.route_request(action, request, client_socket)
 
                 client_socket.sendall(json.dumps(response).encode())
         except Exception as e:
@@ -108,9 +145,10 @@ class ChatServer:
             response = {"status": "error", "message": str(e)}
             client_socket.sendall(json.dumps(response).encode())
         finally:
+            await self.handle_user_disconnect(client_socket)
             client_socket.close()
 
-    async def route_request(self, action, request):
+    async def route_request(self, action, request, client_socket):
         """Route client actions to the appropriate handlers."""
         actions = {
             'add_user': self.add_user_handler,
@@ -124,7 +162,7 @@ class ChatServer:
         handler = actions.get(action)
         if not handler:
             return {"status": "error", "message": "Invalid action"}
-        return await handler(request)
+        return await handler(request, client_socket)
 
     # Action Handlers
     @extract_request_params(['username', 'password'])
