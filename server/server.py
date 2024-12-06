@@ -138,6 +138,7 @@ class ChatServer:
                 self.logger.debug(f"Decoded request: {request}")
 
                 action = request.get('action')
+                self.logger.debug(f"Action: {action}")
                 response = await self.route_request(action, request, client_socket) #絶対ここがおかしい
 
                 # ここで response をデバッグして確認
@@ -170,7 +171,8 @@ class ChatServer:
             'create_room': self.create_room_handler,
         }
 
-        handler = actions.get(action)
+        self.logger.debug(f"Received action: {action}")
+        handler = actions.get(action)# ここがおかしい気がする
         if not handler:
             return {"status": "error", "message": "Invalid action"}
         return await handler(request, client_socket)
