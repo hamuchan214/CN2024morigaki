@@ -9,14 +9,20 @@ def send_request(action, data):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.connect((host, port))
-            request = {"action": action, **data}
-            client_socket.sendall(json.dumps(request).encode())  # Send request
+            
+            # リクエストデータの形式を修正
+            request = {
+                "action": action,
+                **data  # 'data' を直接リクエストに統合
+            }
+            client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
 
-            response_data = client_socket.recv(1024)  # Receive response
+            response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
             response = json.loads(response_data.decode())
             return response
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 # Verification Code
 if __name__ == "__main__":
