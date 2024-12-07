@@ -86,9 +86,16 @@ class ChatClient:
             return {"status": "error", "message": "No active session. Please login first."}
 
         # Check if the room exists by attempting to join it
-        response = self.send_request("join_room", {"room_name": room_name})
-        if response["status"] == "success":
-            self.room_id = response["room_id"]
+        response = self.send_request("get_rooms_by_user", {"user_id": self.session_id})
+        rooms = response.get("rooms", [])
+        room_found = False
+        for room in rooms:
+            if room["name"] == room_name:
+                self.room_id = room["room_id"]
+                room_found = True
+                break
+
+        if room_found:
             print(f"Joined existing room '{room_name}'.")
         else:
             # Room doesn't exist, create a new one
