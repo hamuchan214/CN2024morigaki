@@ -50,6 +50,24 @@ def receive_messages(client_socket, stdscr, messages):
             break
 
 
+# リクエスト送信
+def send_request(action, data, client_socket):
+    """Send a request to the chat server."""
+    host = "127.0.0.1"
+    port = 6001
+
+    try:
+
+        request = {"action": action, **data}
+        client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
+
+        response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
+        response = json.loads(response_data.decode())
+        return response
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # サーバーに接続し、チャットを開始する
 def start_client(stdscr):
     stdscr.clear()  # 画面をクリア
@@ -66,30 +84,29 @@ def start_client(stdscr):
     client_socket.sendall(json.dumps("").encode("utf-8"))
 
     # ユーザー名の入力プロンプト表示
-    stdscr.addstr(0, 0, "Enter your username: ")
-    stdscr.refresh()
-    stdscr.addstr(1, 0, "> ")  # 改行して次の行で入力を促す
-    stdscr.refresh()
-    curses.echo()  # 入力内容を表示
-    username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
-    curses.noecho()  # 入力表示を終了
+    while True:
+        stdscr.addstr(0, 0, "Enter your username: ")
+        stdscr.refresh()
+        stdscr.addstr(1, 0, "> ")  # 改行して次の行で入力を促す
+        stdscr.refresh()
+        curses.echo()  # 入力内容を表示
+        username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
+        curses.noecho()  # 入力表示を終了
 
-    # ユーザー名をサーバーデータベースで検索
-    search_user = {"action": "get_user", "user_id": username}
-    client_socket.send(json.dumps(search_user).encode("utf-8"))
+        # 改行してから、ルーム名の入力プロンプト表示
+        stdscr.addstr(2, 0, "Enter your password: ")
+        stdscr.refresh()
+        stdscr.addstr(3, 0, "> ")  # 次の行で入力を促す
+        stdscr.refresh()
+        curses.echo()  # 入力内容を表示
+        password = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
 
-    isExist = client_socket.recv(1024)
-
-    # 改行してから、ルーム名の入力プロンプト表示
-    stdscr.addstr(2, 0, "Enter your password: ")
-    stdscr.refresh()
-    stdscr.addstr(3, 0, "> ")  # 次の行で入力を促す
-    stdscr.refresh()
-    curses.echo()  # 入力内容を表示
-    password = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
-    if isExist:
-        client_socket.send()
-        correct_pass = client_socket.recv(1024)
+        # ユーザー名をサーバーデータベースで検索
+        search_user = {"user_id": username, "password": password}
+        result = send_request("login", search_user, client_socket)
+        if result["status"] == "success":
+            session_id = result["session_id"]
+            break
 
     curses.noecho()  # 入力表示を終了
 
