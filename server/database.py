@@ -220,20 +220,43 @@ class AsyncDatabase:
             await callback({"status": "error", "message": str(e)})
 
 
-    def get_messages_by_room_async(self, room_id, callback):
-        query = f"""SELECT Message.message_id, User.username, Message.message, Message.timestamp
-                    FROM Message
-                    INNER JOIN User ON Message.user_id = User.user_id
-                    WHERE Message.room_id = {room_id}
-                    ORDER BY Message.timestamp ASC;"""
-        self.query_async(query, callback)
+    async def get_messages_by_room(self, room_id: str) -> dict:
+        """
+        Retrieve all messages for a specific room from the database.
 
-    def get_room_members_async(self, room_id, callback):
-        query = f"""SELECT User.user_id, User.username
-                    FROM RoomUser
-                    INNER JOIN User ON RoomUser.user_id = User.user_id
-                    WHERE RoomUser.room_id = {room_id};"""
-        self.query_async(query, callback)
+        :param room_id: The ID of the room.
+        :return: A dictionary containing the status and messages.
+        """
+        try:
+            query = "SELECT id, user_id, message, timestamp FROM messages WHERE room_id = ? ORDER BY timestamp ASC"
+            async with self._execute_query(query, (room_id,)) as cursor:
+                messages = [
+                    {
+                        "id": row[0],
+                        "user_id": row[1],
+                        "message": row[2],
+                        "timestamp": row[3],
+                    }
+                    for row in await cursor.fetchall()
+                ]
+            return {"status": "success", "messages": messages}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def get_room_members_async(self, room_id: str) -> dict:
+        """
+        Retrieve all members of a specific room from the database.
+
+        :param room_id: The ID of the room.
+        :return: A dictionary containing the status and a list of user IDs.
+        """
+        try:
+            query = "SELECT user_id FROM room_members WHERE room_id = ?"
+            async with self._execute_query(query, (room_id,)) as cursor:
+                members = [row[0] for row in await cursor.fetchall()]
+            return {"status": "success", "members": members}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     async def create_room_async(self, room_name):
         """Asynchronously create a chat room."""
@@ -265,10 +288,21 @@ class AsyncDatabase:
                     VALUES ({user_id}, {room_id}, '{message}');"""
         self.execute_async(query, callback)
 
-    def add_user_to_room_async(self, user_id, room_id, callback):
-        query = f"""INSERT OR IGNORE INTO RoomUser (user_id, room_id, last_read_at)
-                    VALUES ({user_id}, {room_id}, datetime('now'));"""
-        self.execute_async(query, callback)
+    async def add_user_to_room_async(self, room_id: str, user_id: str) -> dict:
+        """
+        Add a user to a specific room.
+
+        :param room_id: The ID of the room.
+        :param user_id: The ID of the user to add.
+        :return: A dictionary containing the status of the operation.
+        """
+        try:
+            query = "INSERT INTO room_members (room_id, user_id) VALUES (?, ?)"
+            async with self._execute_query(query, (room_id, user_id)):
+                pass
+            return {"status": "success", "message": f"User {user_id} added to room {room_id}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def remove_user_from_room_async(self, user_id, room_id, callback):
         query = f"DELETE FROM RoomUser WHERE user_id = {user_id} AND room_id = {room_id};"
