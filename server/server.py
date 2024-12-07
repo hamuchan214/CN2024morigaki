@@ -3,7 +3,7 @@ import socket
 import json
 import time
 from database import AsyncDatabase
-from logging import getLogger, DEBUG
+from logging import getLogger, DEBUG, ERROR, INFO
 import colorlog
 from utils import generate_session_id
 from typing import Callable
@@ -29,15 +29,15 @@ def extract_request_params(required_params: list[str]) -> Callable:
     """Decorator to extract and validate parameters from the JSON request."""
     def decorator(func: Callable):
         async def wrapper(self, request: dict, *args, **kwargs):
-            self.logger.debug(f"Validating params for: {func.__name__}")
+            self.logger.debug(f"Validating parameters for action: {func.__name__}")
             
-            # 必須パラメータをチェック
+            # Check for missing required parameters
             missing_params = [p for p in required_params if p not in request or not request[p]]
             if missing_params:
-                self.logger.debug(f"Missing params: {missing_params}")
+                self.logger.debug(f"Missing parameters: {missing_params}")
                 return {"status": "error", "message": f"Missing parameters: {missing_params}"}
             
-            # 必須パラメータをkwargsに展開して渡す
+            # Filtered params to pass as kwargs
             filtered_kwargs = {param: request[param] for param in required_params}
             self.logger.debug(f"Extracted parameters: {filtered_kwargs}")
             return await func(self, *args, **filtered_kwargs)
@@ -49,6 +49,7 @@ def require_valid_session(func: Callable) -> Callable:
     async def wrapper(self, session_id: str, **kwargs):
         user_id = self.validate_session(session_id)
         if not user_id:
+            self.logger.warning(f"Invalid or expired session: {session_id}")
             return {"status": "error", "message": "Invalid or expired session"}
         return await func(self, user_id=user_id, **kwargs)
     return wrapper
@@ -67,15 +68,17 @@ class ChatServer:
         session_id = generate_session_id(user_id)
         expiration_time = time.time() + 3600
         self.sessions[session_id] = (user_id, expiration_time)
-        self.logger.debug(f"Session created: {self.sessions}")
+        self.logger.info(f"Session created for user {user_id}: {session_id}")
         return session_id
 
     def validate_session(self, session_id: str) -> str | None:
         """Validate the given session ID."""
         session = self.sessions.get(session_id)
         if session and time.time() < session[1]:
+            self.logger.debug(f"Session {session_id} is valid for user {session[0]}")
             return session[0]
         self.sessions.pop(session_id, None)
+        self.logger.warning(f"Session {session_id} is invalid or expired")
         return None
 
     async def initialize_user_rooms(self, user_id: str, client_socket: socket.socket):
@@ -83,6 +86,7 @@ class ChatServer:
         rooms = await self.db.get_rooms_by_user_async(user_id)
         for room_id in rooms:
             self.room_users.setdefault(room_id, []).append(client_socket)
+        self.logger.info(f"Initialized rooms for user {user_id}: {rooms}")
 
     async def handle_user_disconnect(self, client_socket: socket.socket):
         """Remove a disconnected user's socket from all rooms."""
@@ -91,12 +95,14 @@ class ChatServer:
                 sockets.remove(client_socket)
                 if not sockets:
                     del self.room_users[room_id]
+                self.logger.info(f"User disconnected from room {room_id}, remaining members: {len(sockets)}")
 
     async def broadcast_message_to_room(self, room_id: str, message: str, sender_socket: socket.socket):
         """Broadcast a message to all members of a room except the sender."""
         for user_socket in self.room_users.get(room_id, []):
             if user_socket != sender_socket:
                 await self._send_message(user_socket, message)
+        self.logger.info(f"Broadcast message to room {room_id}: {message[:20]}...")
 
     async def _send_message(self, client_socket: socket.socket, message: str):
         """Helper method to send messages asynchronously."""
@@ -104,15 +110,14 @@ class ChatServer:
             if isinstance(message, dict):
                 message = json.dumps(message)
 
-            # メッセージをバイト型に変換
+            # Convert message to bytes
             if isinstance(message, str):
                 message = message.encode("utf-8")
 
             await asyncio.get_running_loop().sock_sendall(client_socket, message)
             self.logger.debug(f"Message sent: {message.decode('utf-8')}")
         except Exception as e:
-            self.logger.error(f"Failed to send message: {e}")
-
+            self.logger.error(f"Failed to send message to {client_socket.getpeername()}: {e}")
 
     async def start(self):
         """Start the server."""
@@ -136,33 +141,32 @@ class ChatServer:
     async def handle_client(self, client_socket):
         """Handle client requests."""
         try:
-            while True:  # クライアントとの接続を維持するためループ
+            while True:  # Keep the connection alive
                 self.logger.debug("Waiting to receive data from client.")
                 data = await asyncio.get_running_loop().run_in_executor(None, client_socket.recv, 1024)
                 
                 if not data:
-                    self.logger.info("Client disconnected")
-                    break  # データが送信されなければ接続を切断
+                    self.logger.info(f"Client {client_socket.getpeername()} disconnected")
+                    break  # Disconnect if no data
 
-                self.logger.debug(f"Received data: {data}")
+                self.logger.debug(f"Received data from {client_socket.getpeername()}: {data}")
                 request = json.loads(data.decode())
                 self.logger.debug(f"Decoded request: {request}")
 
                 action = request.get('action')
                 if not action:
                     await self._send_message(client_socket, {"status": "error", "message": "Missing action in request"})
-                    continue  # 次のリクエストを受ける
+                    continue  # Continue waiting for valid requests
 
                 self.logger.debug(f"Action: {action}")
                 response = await self.route_request(action, request, client_socket)
                 await self._send_message(client_socket, response)
 
         except Exception as e:
-            self.logger.error(f"Error handling client: {e}")
+            self.logger.error(f"Error handling client {client_socket.getpeername()}: {e}")
             await self._send_message(client_socket, {"status": "error", "message": str(e)})
         finally:
-            # ソケットはここで閉じない
-            self.logger.debug("Client handling complete.")
+            self.logger.debug(f"Client {client_socket.getpeername()} handling complete.")
 
     async def route_request(self, action: str, request: dict, client_socket: socket.socket):
         """Route client actions to the appropriate handlers."""
@@ -179,10 +183,11 @@ class ChatServer:
 
         handler = actions.get(action)
         if not handler:
+            self.logger.warning(f"Invalid action received: {action}")
             return {"status": "error", "message": "Invalid action"}
         
         try:
-            # デコレータが必要なパラメータを抽出して処理
+            # Extract parameters and handle request
             response = await handler(request)
             return response
         except Exception as e:
@@ -192,57 +197,74 @@ class ChatServer:
     # Action Handlers
     @extract_request_params(['username', 'password'])
     async def add_user_handler(self, username: str, password: str):
-        return await self.db.add_user(username, password)
+        result = await self.db.add_user(username, password)
+        if result["status"] == "success":
+            self.logger.info(f"User '{username}' added successfully.")
+        else:
+            self.logger.warning(f"Failed to add user '{username}': {result.get('message')}")
+        return result
 
     @extract_request_params(['username', 'password'])
     async def login_handler(self, username: str, password: str):
         login_result = await self.db.login(username, password)
         if login_result["status"] == "success":
-            user_id = login_result["user_id"]
-            session_id = self.create_session(user_id)
-            return {"status": "success", "session_id": session_id}
+            self.logger.info(f"User '{username}' logged in successfully.")
+        else:
+            self.logger.warning(f"Failed login for user '{username}': {login_result.get('message')}")
         return login_result
 
     @extract_request_params(['user_id'])
     async def get_rooms_by_user_handler(self, user_id: str):
-        return await self.db.get_rooms_by_user(user_id)
+        result = await self.db.get_rooms_by_user(user_id)
+        if result:
+            self.logger.info(f"Fetched rooms for user '{user_id}' successfully.")
+        else:
+            self.logger.warning(f"Failed to fetch rooms for user '{user_id}'.")
+        return result
 
     @extract_request_params(['room_id'])
     async def get_messages_by_room_handler(self, room_id: str):
-        return await self.db.get_messages_by_room(room_id)
+        result = await self.db.get_messages_by_room(room_id)
+        if result:
+            self.logger.info(f"Fetched messages for room '{room_id}' successfully.")
+        else:
+            self.logger.warning(f"Failed to fetch messages for room '{room_id}'.")
+        return result
 
     @extract_request_params(['session_id', 'room_id', 'message'])
     @require_valid_session
     async def add_message_handler(self, user_id: str, room_id: str, message: str):
         save_result = await self.db.save_message_async(user_id, room_id, message)
         if save_result["status"] == "success":
-            return {"status": "success", "message_id": save_result["message_id"]}
-        return {"status": "error", "message": save_result["message"]}
+            self.logger.info(f"Message added to room '{room_id}' by user '{user_id}' successfully.")
+        else:
+            self.logger.warning(f"Failed to add message to room '{room_id}': {save_result.get('message')}")
+        return save_result
 
     @extract_request_params(['session_id', 'room_name'])
     @require_valid_session
     async def create_room_handler(self, user_id: str, room_name: str):
         create_room_result = await self.db.create_room_async(room_name)
         if create_room_result["status"] == "success":
-            return {"status": "success", "room_id": create_room_result["room_id"]}
-        return {"status": "error", "message": create_room_result["message"]}
+            self.logger.info(f"Room '{room_name}' created successfully by user '{user_id}'.")
+        else:
+            self.logger.warning(f"Failed to create room '{room_name}' for user '{user_id}': {create_room_result.get('message')}")
+        return create_room_result
 
     @extract_request_params(['room_id'])
     async def get_room_members_handler(self, room_id: str):
-        """
-        Handler to get all members of a specific room.
-        """
         result = await self.db.get_room_members_async(room_id)
         if result["status"] == "success":
-            return {"status": "success", "members": result["members"]}
-        return {"status": "error", "message": result["message"]}
+            self.logger.info(f"Fetched members for room '{room_id}' successfully.")
+        else:
+            self.logger.warning(f"Failed to fetch members for room '{room_id}': {result.get('message')}")
+        return result
 
     @extract_request_params(['room_id', 'user_id'])
     async def add_user_to_room_handler(self, room_id: str, user_id: str):
-        """
-        Handler to add a user to a specific room.
-        """
         result = await self.db.add_user_to_room_async(room_id, user_id)
         if result["status"] == "success":
-            return {"status": "success", "message": result["message"]}
-        return {"status": "error", "message": result["message"]}
+            self.logger.info(f"User '{user_id}' added to room '{room_id}' successfully.")
+        else:
+            self.logger.warning(f"Failed to add user '{user_id}' to room '{room_id}': {result.get('message')}")
+        return result
