@@ -20,7 +20,7 @@
 `ChatServer` クラスは、サーバー全体の管理を行います。以下に主なメソッドを説明します。
 
 #### コンストラクタ (`__init__`)
-@@@
+```
 def __init__(self, host='127.0.0.1', port=6001):
     self.host = host
     self.port = port
@@ -29,7 +29,7 @@ def __init__(self, host='127.0.0.1', port=6001):
     self.room_users = {}
     self.socket_user_map = {}
     self.logger = setup_logger()
-@@@
+```
 - サーバーのホスト（デフォルトは`127.0.0.1`）とポート（デフォルトは`6001`）を設定します。
 - データベースインスタンスを作成します。
 - セッション、ルーム、ソケットとユーザーの関連を管理するための辞書を初期化します。
@@ -38,14 +38,14 @@ def __init__(self, host='127.0.0.1', port=6001):
 #### セッション管理
 
 ##### `create_session`
-@@@
+```
 def create_session(self, user_id: str) -> str:
     session_id = generate_session_id(user_id)
     expiration_time = time.time() + 3600
     self.sessions[session_id] = (user_id, expiration_time)
     self.logger.info(f"Session created for user {user_id}: {session_id}")
     return session_id
-@@@
+```
 - ユーザーIDからセッションIDを生成し、セッションを作成します。
 
 **リクエスト例**:
@@ -60,7 +60,7 @@ def create_session(self, user_id: str) -> str:
 }
 
 ##### `validate_session`
-@@@
+```
 def validate_session(self, session_id: str) -> str | None:
     session = self.sessions.get(session_id)
     if session and time.time() < session[1]:
@@ -69,7 +69,7 @@ def validate_session(self, session_id: str) -> str | None:
     self.sessions.pop(session_id, None)
     self.logger.warning(f"Session {session_id} is invalid or expired")
     return None
-@@@
+```
 - セッションIDが有効かを検証し、有効な場合はユーザーIDを返します。
 
 **リクエスト例**:
@@ -86,7 +86,7 @@ def validate_session(self, session_id: str) -> str | None:
 #### ユーザー管理
 
 ##### `initialize_user_rooms`
-@@@
+```
 async def initialize_user_rooms(self, user_id: str, client_socket: socket.socket):
     rooms = await self.db.get_rooms_by_user_async(user_id)
     for room_id in rooms:
@@ -95,7 +95,7 @@ async def initialize_user_rooms(self, user_id: str, client_socket: socket.socket
     
     self.socket_user_map[client_socket] = user_id
     self.logger.info(f"Socket {client_socket.getpeername()} mapped to user {user_id}")
-@@@
+```
 - ユーザーが所属する部屋を取得し、そのユーザーを各部屋にマップします。
 - ソケットとユーザーIDを紐づける。
 
@@ -112,7 +112,7 @@ async def initialize_user_rooms(self, user_id: str, client_socket: socket.socket
 }
 
 ##### `handle_user_disconnect`
-@@@
+```
 async def handle_user_disconnect(self, client_socket: socket.socket):
     user_id = self.socket_user_map.get(client_socket)
     if user_id:
@@ -124,7 +124,7 @@ async def handle_user_disconnect(self, client_socket: socket.socket):
                     del self.room_users[room_id]
         del self.socket_user_map[client_socket]
         self.logger.info(f"Socket {client_socket.getpeername()} unmapped from user {user_id}")
-@@@
+```
 - ユーザーが切断された際に、そのユーザーをすべてのルームから削除し、ソケットとユーザーIDのマッピングを解除します。
 
 **リクエスト例**:
@@ -141,13 +141,13 @@ async def handle_user_disconnect(self, client_socket: socket.socket):
 #### メッセージ送信
 
 ##### `broadcast_message_to_room`
-@@@
+```
 async def broadcast_message_to_room(self, room_id: str, message: str, sender_socket: socket.socket):
     for user_socket in self.room_users.get(room_id, []):
         if user_socket != sender_socket:
             await self._send_message(user_socket, message)
     self.logger.info(f"Broadcast message to room {room_id}: {message[:20]}...")
-@@@
+```
 - 指定された部屋の全メンバーにメッセージを送信します。
 
 **リクエスト例**:
@@ -164,7 +164,7 @@ async def broadcast_message_to_room(self, room_id: str, message: str, sender_soc
 }
 
 ##### `_send_message`
-@@@
+```
 async def _send_message(self, client_socket: socket.socket, message: str):
     try:
         if isinstance(message, dict):
@@ -175,7 +175,7 @@ async def _send_message(self, client_socket: socket.socket, message: str):
         self.logger.debug(f"Message sent: {message.decode('utf-8')}")
     except Exception as e:
         self.logger.error(f"Failed to send message to {client_socket.getpeername()}: {e}")
-@@@
+```
 - メッセージをクライアントに送信します。エラーハンドリングも行います。
 
 **リクエスト例**:
@@ -193,7 +193,7 @@ async def _send_message(self, client_socket: socket.socket, message: str):
 #### クライアントリクエストの処理
 
 ##### `handle_client`
-@@@
+```
 async def handle_client(self, client_socket):
     try:
         while True:
@@ -220,7 +220,7 @@ async def handle_client(self, client_socket):
         await self._send_message(client_socket, {"status": "error", "message": str(e)})
     finally:
         self.logger.debug(f"Client {client_socket.getpeername()} handling complete.")
-@@@
+```
 - クライアントからのリクエストを処理し、対応するアクションを実行します。
 
 **リクエスト例**:
@@ -240,7 +240,7 @@ async def handle_client(self, client_socket):
 #### リクエストのルーティング
 
 ##### `route_request`
-@@@
+```
 async def route_request(self, action: str, request: dict, client_socket: socket.socket):
     actions = {
         'add_user': self.add_user_handler,
@@ -264,7 +264,7 @@ async def route_request(self, action: str, request: dict, client_socket: socket.
     except Exception as e:
         self.logger.error(f"Error in handler for action '{action}': {e}")
         return {"status": "error", "message": str(e)}
-@@@
+```
 - リクエストに基づいて適切なハンドラーを呼び出します。
 
 **リクエスト例**:
@@ -283,7 +283,7 @@ async def route_request(self, action: str, request: dict, client_socket: socket.
 ## デコレーター
 
 ### `extract_request_params`
-@@@
+```
 def extract_request_params(required_params: list[str]) -> Callable:
     def decorator(func: Callable):
         async def wrapper(self, request: dict, *args, **kwargs):
@@ -294,7 +294,7 @@ def extract_request_params(required_params: list[str]) -> Callable:
             return await func(self, *args, **filtered_kwargs)
         return wrapper
     return decorator
-@@@
+```
 - リクエストから必要なパラメータを抽出し、検証するデコレーターです。
 
 **リクエスト例**:
@@ -309,7 +309,7 @@ def extract_request_params(required_params: list[str]) -> Callable:
 }
 
 ### `require_valid_session`
-@@@
+```
 def require_valid_session(func: Callable) -> Callable:
     async def wrapper(self, session_id: str, **kwargs):
         user_id = self.validate_session(session_id)
@@ -317,7 +317,7 @@ def require_valid_session(func: Callable) -> Callable:
             return {"status": "error", "message": "Invalid or expired session"}
         return await func(self, user_id=user_id, **kwargs)
     return wrapper
-@@@
+```
 - セッションIDを検証し、有効な場合にのみ処理を実行するデコレーターです。
 
 **リクエスト例**:
