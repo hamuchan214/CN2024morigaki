@@ -61,6 +61,7 @@ class ChatServer:
         self.db = AsyncDatabase('chat.db')
         self.sessions = {}
         self.room_users = {}
+        self.socket_user_map = {}  # ソケットとユーザーIDの紐付け
         self.logger = setup_logger()
 
     def create_session(self, user_id: str) -> str:
@@ -87,15 +88,24 @@ class ChatServer:
         for room_id in rooms:
             self.room_users.setdefault(room_id, []).append(client_socket)
         self.logger.info(f"Initialized rooms for user {user_id}: {rooms}")
+        
+        # ユーザーIDとソケットを紐付ける
+        self.socket_user_map[client_socket] = user_id
+        self.logger.info(f"Socket {client_socket.getpeername()} mapped to user {user_id}")
 
     async def handle_user_disconnect(self, client_socket: socket.socket):
-        """Remove a disconnected user's socket from all rooms."""
-        for room_id, sockets in list(self.room_users.items()):
-            if client_socket in sockets:
-                sockets.remove(client_socket)
-                if not sockets:
-                    del self.room_users[room_id]
-                self.logger.info(f"User disconnected from room {room_id}, remaining members: {len(sockets)}")
+        """Remove a disconnected user's socket from all rooms and map."""
+        user_id = self.socket_user_map.get(client_socket)
+        if user_id:
+            self.logger.info(f"User {user_id} disconnected.")
+            # ソケットを紐解いて部屋から削除
+            for room_id, sockets in list(self.room_users.items()):
+                if client_socket in sockets:
+                    sockets.remove(client_socket)
+                    if not sockets:
+                        del self.room_users[room_id]
+            del self.socket_user_map[client_socket]
+            self.logger.info(f"Socket {client_socket.getpeername()} unmapped from user {user_id}")
 
     async def broadcast_message_to_room(self, room_id: str, message: str, sender_socket: socket.socket):
         """Broadcast a message to all members of a room except the sender."""
@@ -149,18 +159,26 @@ class ChatServer:
                     self.logger.info(f"Client {client_socket.getpeername()} disconnected")
                     break  # Disconnect if no data
 
-                self.logger.debug(f"Received data from {client_socket.getpeername()}: {data}")
                 request = json.loads(data.decode())
                 self.logger.debug(f"Decoded request: {request}")
 
-                action = request.get('action')
-                if not action:
-                    await self._send_message(client_socket, {"status": "error", "message": "Missing action in request"})
-                    continue  # Continue waiting for valid requests
+                session_id = request.get('session_id')
+                if not session_id:
+                    # セッションIDがない場合は、ユーザー登録やログイン処理などを処理できるようにする
+                    action = request.get('action')
+                    if action and action in ['add_user', 'login']:
+                        response = await self.route_request(action, request, client_socket)
+                        await self._send_message(client_socket, response)
+                        continue  # セッションIDがない場合、ログインやユーザー登録を先に処理
+                    else:
+                        await self._send_message(client_socket, {"status": "error", "message": "Missing session_id"})
+                        continue  # セッションIDがない場合は、エラーメッセージを返す
 
-                self.logger.debug(f"Action: {action}")
-                response = await self.route_request(action, request, client_socket)
-                await self._send_message(client_socket, response)
+                # セッションIDがある場合にのみセッションを検証
+                action = request.get('action')
+                if action:
+                    response = await self.route_request(action, request, client_socket)
+                    await self._send_message(client_socket, response)
 
         except Exception as e:
             self.logger.error(f"Error handling client {client_socket.getpeername()}: {e}")

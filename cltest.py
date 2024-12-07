@@ -21,11 +21,16 @@ class ChatClient:
                     "action": action,
                     **data
                 }
+                # Only include session_id if it's set (login or room operations)
+                if self.session_id:
+                    request["session_id"] = self.session_id
+
                 client_socket.sendall(json.dumps(request).encode())  # Send request
 
                 # Receive and decode response
                 response_data = client_socket.recv(1024)
                 response = json.loads(response_data.decode())
+                print("Server Response:", response)  # Print the server's response
                 return response
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -54,7 +59,7 @@ class ChatClient:
         if not self.session_id:
             print("No active session. Please login first.")
             return {"status": "error", "message": "No active session. Please login first."}
-        response = self.send_request("create_room", {"session_id": self.session_id, "room_name": room_name})
+        response = self.send_request("create_room", {"room_name": room_name})
         if response["status"] == "success":
             self.room_id = response["room_id"]
             print(f"Room '{room_name}' created successfully.")
@@ -67,13 +72,12 @@ class ChatClient:
         if not self.session_id or not self.room_id:
             print("Session or room ID missing. Please login and select a room first.")
             return {"status": "error", "message": "Session or room ID missing. Please login and select a room first."}
-        response = self.send_request("add_message", {"session_id": self.session_id, "room_id": self.room_id, "message": message})
+        response = self.send_request("add_message", {"room_id": self.room_id, "message": message})
         if response["status"] == "success":
             print(f"Message sent to room {self.room_id}: {message}")
         else:
             print(f"Failed to send message to room {self.room_id}: {response.get('message')}")
         return response
-
 
     def join_or_create_room(self, room_name):
         """Join a room or create it if it doesn't exist."""
@@ -82,7 +86,7 @@ class ChatClient:
             return {"status": "error", "message": "No active session. Please login first."}
 
         # Check if the room exists by attempting to join it
-        response = self.send_request("join_room", {"session_id": self.session_id, "room_name": room_name})
+        response = self.send_request("join_room", {"room_name": room_name})
         if response["status"] == "success":
             self.room_id = response["room_id"]
             print(f"Joined existing room '{room_name}'.")
@@ -99,12 +103,14 @@ def listen_for_messages(host, port, room_id):
     """Continuously listen for incoming messages."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((host, port))
-        client_socket.sendall(json.dumps({"action": "join_room", "room_id": room_id}).encode())
+        client_socket.sendall(json.dumps({"session_id": None, "action": "join_room", "room_id": room_id}).encode())
         while True:
             data = client_socket.recv(1024)
             if not data:
                 break
-            print(json.loads(data.decode()))
+            response = json.loads(data.decode())
+            print("Incoming Message:", response)  # Print the incoming messages
+            # Optionally, you can add message handling here
 
 
 if __name__ == "__main__":
@@ -112,10 +118,10 @@ if __name__ == "__main__":
     password = input("Enter password: ")
 
     client = ChatClient()
-    
+
     # Register user
     client.add_user(username, password)
-    
+
     # Login user
     client.login(username, password)
 
