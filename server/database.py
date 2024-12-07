@@ -1,6 +1,7 @@
 import sqlite3
 import asyncio
 import hashlib
+import uuid
 
 
 class AsyncDatabase:
@@ -8,7 +9,6 @@ class AsyncDatabase:
         self.db_name = db_name
         self.connection = sqlite3.connect(db_name, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row  # Allows accessing columns by name
-        self.server = None
 
     async def execute_async(self, query):
         """Execute a write operation asynchronously."""
@@ -103,7 +103,7 @@ class AsyncDatabase:
                 print(f"hashed_password: {hashed_password}")  # デバッグ出力
 
                 if hashed_password == stored_password:
-                    session_id = self.server.create_session(user_id)
+                    session_id = str(uuid.uuid4())
                     print(f"Session created: {session_id}")  # デバッグ出力
                     return {"status": "success", "user_id": user_id,"session_id": session_id}
                 else:
@@ -149,27 +149,31 @@ class AsyncDatabase:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    async def save_message_async(self, user_id, room_id, message, callback):
-        query = f"""
+    async def save_message_async(self, user_id, room_id, message):
+        query = """
             INSERT INTO Message (user_id, room_id, message)
-            VALUES ({user_id}, {room_id}, '{message}');
+            VALUES (?, ?, ?);
         """
         params = (user_id, room_id, message)
-        
-        async def execute_and_return_message_id():
+        loop = asyncio.get_running_loop()
+
+        def execute_and_return_message_id():
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(query,params)
+                cursor.execute(query, params)
                 self.connection.commit()
                 message_id = cursor.lastrowid
                 cursor.close()
                 return {"status": "success", "message_id": message_id}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
             except sqlite3.IntegrityError:
                 return {"status": "error", "message": "Invalid user_id or room_id"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
 
-        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_message_id)
+        # 非同期に同期関数を実行
+        result = await loop.run_in_executor(None, execute_and_return_message_id)
+        return result
+
 
     def delete_user_async(self, user_id, callback):
         query = f"DELETE FROM User WHERE user_id = {user_id};"
@@ -179,32 +183,86 @@ class AsyncDatabase:
         query = f"SELECT username, password FROM User WHERE user_id = {user_id};"
         self.query_async(query, callback)
 
-    def get_rooms_by_user_async(self, user_id, callback):
+    async def get_rooms_by_user(self, user_id, callback):
+        """
+        Get a list of rooms the user belongs to asynchronously.
+        
+        :param user_id: ID of the user
+        :param callback: A callback function to handle the result
+        """
         query = f"""SELECT Room.room_id, Room.room_name, Room.created_at
                     FROM RoomUser
                     INNER JOIN Room ON RoomUser.room_id = Room.room_id
-                    WHERE RoomUser.user_id = {user_id};"""
-        self.query_async(query, callback)
+                    WHERE RoomUser.user_id = ?;"""
+        try:
+            # Run the query in an asynchronous executor
+            def query_rooms():
+                cursor = self.connection.cursor()
+                cursor.execute(query, (user_id,))
+                rooms = cursor.fetchall()
+                cursor.close()
+                return rooms
 
-    def get_messages_by_room_async(self, room_id, callback):
-        query = f"""SELECT Message.message_id, User.username, Message.message, Message.timestamp
-                    FROM Message
-                    INNER JOIN User ON Message.user_id = User.user_id
-                    WHERE Message.room_id = {room_id}
-                    ORDER BY Message.timestamp ASC;"""
-        self.query_async(query, callback)
+            # Await the result of the query
+            rooms = await asyncio.get_running_loop().run_in_executor(None, query_rooms)
 
-    def get_room_members_async(self, room_id, callback):
-        query = f"""SELECT User.user_id, User.username
-                    FROM RoomUser
-                    INNER JOIN User ON RoomUser.user_id = User.user_id
-                    WHERE RoomUser.room_id = {room_id};"""
-        self.query_async(query, callback)
+            # Convert the rooms to a structured format
+            room_list = [
+                {"room_id": room[0], "room_name": room[1], "created_at": room[2]}
+                for room in rooms
+            ]
 
-    async def create_room_async(self, room_name, callback):
-        query = f"INSERT INTO Room (room_name) VALUES (?)"
+            # Pass the result to the callback
+            await callback({"status": "success", "rooms": room_list})
         
-        async def execute_and_return_room_id():
+        except Exception as e:
+            # Pass the error to the callback
+            await callback({"status": "error", "message": str(e)})
+
+
+    async def get_messages_by_room(self, room_id: str) -> dict:
+        """
+        Retrieve all messages for a specific room from the database.
+
+        :param room_id: The ID of the room.
+        :return: A dictionary containing the status and messages.
+        """
+        try:
+            query = "SELECT id, user_id, message, timestamp FROM messages WHERE room_id = ? ORDER BY timestamp ASC"
+            async with self._execute_query(query, (room_id,)) as cursor:
+                messages = [
+                    {
+                        "id": row[0],
+                        "user_id": row[1],
+                        "message": row[2],
+                        "timestamp": row[3],
+                    }
+                    for row in await cursor.fetchall()
+                ]
+            return {"status": "success", "messages": messages}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def get_room_members_async(self, room_id: str) -> dict:
+        """
+        Retrieve all members of a specific room from the database.
+
+        :param room_id: The ID of the room.
+        :return: A dictionary containing the status and a list of user IDs.
+        """
+        try:
+            query = "SELECT user_id FROM room_members WHERE room_id = ?"
+            async with self._execute_query(query, (room_id,)) as cursor:
+                members = [row[0] for row in await cursor.fetchall()]
+            return {"status": "success", "members": members}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    async def create_room_async(self, room_name):
+        """Asynchronously create a chat room."""
+        query = "INSERT INTO Room (room_name) VALUES (?)"
+
+        def execute_and_return_room_id():
             try:
                 cursor = self.connection.cursor()
                 cursor.execute(query, (room_name,))
@@ -212,12 +270,14 @@ class AsyncDatabase:
                 room_id = cursor.lastrowid
                 cursor.close()
                 return {"status": "success", "room_id": room_id}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-            except sqlite3.IntegrityError:
+            except sqlite3.IntegrityError:  # Handle duplicate room name error
                 return {"status": "error", "message": "Room name already exists"}
+            except Exception as e:  # General exception handling
+                return {"status": "error", "message": str(e)}
 
+        # Run the database operation in a separate thread
         return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_room_id)
+
 
     def delete_room_async(self, room_id, callback):
         query = f"DELETE FROM Room WHERE room_id = {room_id};"
@@ -228,10 +288,21 @@ class AsyncDatabase:
                     VALUES ({user_id}, {room_id}, '{message}');"""
         self.execute_async(query, callback)
 
-    def add_user_to_room_async(self, user_id, room_id, callback):
-        query = f"""INSERT OR IGNORE INTO RoomUser (user_id, room_id, last_read_at)
-                    VALUES ({user_id}, {room_id}, datetime('now'));"""
-        self.execute_async(query, callback)
+    async def add_user_to_room_async(self, room_id: str, user_id: str) -> dict:
+        """
+        Add a user to a specific room.
+
+        :param room_id: The ID of the room.
+        :param user_id: The ID of the user to add.
+        :return: A dictionary containing the status of the operation.
+        """
+        try:
+            query = "INSERT INTO room_members (room_id, user_id) VALUES (?, ?)"
+            async with self._execute_query(query, (room_id, user_id)):
+                pass
+            return {"status": "success", "message": f"User {user_id} added to room {room_id}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def remove_user_from_room_async(self, user_id, room_id, callback):
         query = f"DELETE FROM RoomUser WHERE user_id = {user_id} AND room_id = {room_id};"
