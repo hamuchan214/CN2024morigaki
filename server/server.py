@@ -168,6 +168,8 @@ class ChatServer:
             'get_messages_by_room': self.get_messages_by_room_handler,
             'add_message': self.add_message_handler,
             'create_room': self.create_room_handler,
+            'get_room_members': self.get_room_members_handler,
+            'add_user_to_room': self.add_user_to_room_handler,
         }
 
         handler = actions.get(action)
@@ -219,3 +221,23 @@ class ChatServer:
         if create_room_result["status"] == "success":
             return {"status": "success", "room_id": create_room_result["room_id"]}
         return {"status": "error", "message": create_room_result["message"]}
+
+    @extract_request_params(['room_id'])
+    async def get_room_members_handler(self, room_id: str):
+        """
+        Handler to get all members of a specific room.
+        """
+        result = await self.db.get_room_members_async(room_id)
+        if result["status"] == "success":
+            return {"status": "success", "members": result["members"]}
+        return {"status": "error", "message": result["message"]}
+
+    @extract_request_params(['room_id', 'user_id'])
+    async def add_user_to_room_handler(self, room_id: str, user_id: str):
+        """
+        Handler to add a user to a specific room.
+        """
+        result = await self.db.add_user_to_room_async(room_id, user_id)
+        if result["status"] == "success":
+            return {"status": "success", "message": result["message"]}
+        return {"status": "error", "message": result["message"]}
