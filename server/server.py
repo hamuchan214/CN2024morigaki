@@ -136,10 +136,14 @@ class ChatServer:
     async def handle_client(self, client_socket):
         """Handle client requests."""
         try:
-            self.logger.debug("Waiting to receive data from client.")
-            data = await asyncio.get_running_loop().run_in_executor(None, client_socket.recv, 1024)
-            
-            if data:
+            while True:  # クライアントとの接続を維持するためループ
+                self.logger.debug("Waiting to receive data from client.")
+                data = await asyncio.get_running_loop().run_in_executor(None, client_socket.recv, 1024)
+                
+                if not data:
+                    self.logger.info("Client disconnected")
+                    break  # データが送信されなければ接続を切断
+
                 self.logger.debug(f"Received data: {data}")
                 request = json.loads(data.decode())
                 self.logger.debug(f"Decoded request: {request}")
@@ -147,17 +151,18 @@ class ChatServer:
                 action = request.get('action')
                 if not action:
                     await self._send_message(client_socket, {"status": "error", "message": "Missing action in request"})
-                    return
+                    continue  # 次のリクエストを受ける
 
                 self.logger.debug(f"Action: {action}")
                 response = await self.route_request(action, request, client_socket)
                 await self._send_message(client_socket, response)
+
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
             await self._send_message(client_socket, {"status": "error", "message": str(e)})
         finally:
-            self.logger.debug("Closing client socket.")
-            client_socket.close()
+            # ソケットはここで閉じない
+            self.logger.debug("Client handling complete.")
 
     async def route_request(self, action: str, request: dict, client_socket: socket.socket):
         """Route client actions to the appropriate handlers."""
@@ -169,7 +174,7 @@ class ChatServer:
             'add_message': self.add_message_handler,
             'create_room': self.create_room_handler,
             'get_room_members': self.get_room_members_handler,
-            'add_user_to_room': self.add_user_to_room_handler,
+            'join_room': self.add_user_to_room_handler,
         }
 
         handler = actions.get(action)
