@@ -183,7 +183,7 @@ class AsyncDatabase:
         query = f"SELECT username, password FROM User WHERE user_id = {user_id};"
         self.query_async(query, callback)
 
-    async def get_rooms_by_user_async(self, user_id, callback):
+    async def get_rooms_by_user(self, user_id, callback):
         """
         Get a list of rooms the user belongs to asynchronously.
         

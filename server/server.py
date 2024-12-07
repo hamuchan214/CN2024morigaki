@@ -22,14 +22,25 @@ def setup_logger() -> getLogger:
     logger.setLevel(LOG_LEVEL)
     return logger
 
+import json
+from typing import Callable
+
 def extract_request_params(required_params: list[str]) -> Callable:
-    """Decorator to extract and validate parameters from the request."""
+    """Decorator to extract and validate parameters from the JSON request."""
     def decorator(func: Callable):
-        async def wrapper(self, request, *args, **kwargs):
-            missing_params = [p for p in required_params if p not in request]
+        async def wrapper(self, request: dict, *args, **kwargs):
+            self.logger.debug(f"Validating params for: {func.__name__}")
+            
+            # 必須パラメータをチェック
+            missing_params = [p for p in required_params if p not in request or not request[p]]
             if missing_params:
+                self.logger.debug(f"Missing params: {missing_params}")
                 return {"status": "error", "message": f"Missing parameters: {missing_params}"}
-            return await func(self, request, *args, **kwargs)  # pass request to the function
+            
+            # 必須パラメータをkwargsに展開して渡す
+            filtered_kwargs = {param: request[param] for param in required_params}
+            self.logger.debug(f"Extracted parameters: {filtered_kwargs}")
+            return await func(self, *args, **filtered_kwargs)
         return wrapper
     return decorator
 
@@ -90,19 +101,15 @@ class ChatServer:
     async def _send_message(self, client_socket: socket.socket, message: str):
         """Helper method to send messages asynchronously."""
         try:
-            # メッセージが辞書型の場合、JSON文字列に変換
             if isinstance(message, dict):
                 message = json.dumps(message)
-            
-            # メッセージが文字列の場合はバイト列に変換
-            if isinstance(message, str):
-                message = message.encode('utf-8')  # 文字列をバイト列に変換
-            
-            # メッセージを送信
-            await asyncio.get_running_loop().sock_sendall(client_socket, message)
-            # 送信したメッセージをデバッグログに表示
-            self.logger.debug(f"Message sent: {message.decode('utf-8')}")
 
+            # メッセージをバイト型に変換
+            if isinstance(message, str):
+                message = message.encode("utf-8")
+
+            await asyncio.get_running_loop().sock_sendall(client_socket, message)
+            self.logger.debug(f"Message sent: {message.decode('utf-8')}")
         except Exception as e:
             self.logger.error(f"Failed to send message: {e}")
 
@@ -138,21 +145,13 @@ class ChatServer:
                 self.logger.debug(f"Decoded request: {request}")
 
                 action = request.get('action')
+                if not action:
+                    await self._send_message(client_socket, {"status": "error", "message": "Missing action in request"})
+                    return
+
                 self.logger.debug(f"Action: {action}")
-                response = await self.route_request(action, request, client_socket) #絶対ここがおかしい
-
-                # ここで response をデバッグして確認
-                self.logger.debug(f"Response (before encode): {response}")
-
-                # 必ず response が辞書型であることを確認
-                if isinstance(response, dict):
-                    response_json = json.dumps(response)
-                    self.logger.debug(f"Response JSON: {response_json}")
-                    await self._send_message(client_socket, response_json)
-                else:
-                    self.logger.error(f"Unexpected response format: {type(response)}")
-                    await self._send_message(client_socket, {"status": "error", "message": "Invalid response format"})
-
+                response = await self.route_request(action, request, client_socket)
+                await self._send_message(client_socket, response)
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
             await self._send_message(client_socket, {"status": "error", "message": str(e)})
@@ -171,11 +170,17 @@ class ChatServer:
             'create_room': self.create_room_handler,
         }
 
-        self.logger.debug(f"Received action: {action}")
-        handler = actions.get(action)# ここがおかしい気がする
+        handler = actions.get(action)
         if not handler:
             return {"status": "error", "message": "Invalid action"}
-        return await handler(request, client_socket)
+        
+        try:
+            # デコレータが必要なパラメータを抽出して処理
+            response = await handler(request)
+            return response
+        except Exception as e:
+            self.logger.error(f"Error in handler for action '{action}': {e}")
+            return {"status": "error", "message": str(e)}
 
     # Action Handlers
     @extract_request_params(['username', 'password'])
