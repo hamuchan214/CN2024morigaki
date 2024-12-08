@@ -81,7 +81,7 @@ def start_client(stdscr):
         stdscr.addstr(f"Error connecting to server: {e}\n")
         stdscr.refresh()
         return
-    client_socket.sendall(json.dumps("").encode("utf-8"))
+
     while True:
         stdscr.addstr(0, 0, "Input i or o (Login:i/Logon:o):")
         stdscr.addstr(1, 0, ">")
