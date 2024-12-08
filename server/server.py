@@ -5,6 +5,7 @@ from database import AsyncDatabase
 from logging import getLogger, DEBUG
 import colorlog
 from utils import generate_session_id
+import socket
 
 # colorlog用の設定
 LOG_FORMAT = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -63,19 +64,26 @@ class ChatServer:
             return
         self.logger.warning("Database setup completed successfully.")
 
-        server_socket = await asyncio.start_server(
-            self.handle_client, self.host, self.port
-        )
-        self.logger.info(f"Server listening on {self.host}:{self.port}")
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setblocking(False)
+        server.bind((self.host, self.port))
+        server.listen(5)
+        loop = asyncio.get_event_loop()
+        while True:
+            client, address = await loop.sock_accept(server)
+            self.logger.info(f"Accepted new client connection: {address}")
+            client.setblocking(False)
+            self.clients.append(client)  # 新しいクライアントをリストに追加
+            asyncio.create_task(self.handle_client(client, loop))
 
-        async with server_socket:
-            await server_socket.serve_forever()
-
-    async def handle_client(self, reader, writer):
+    async def handle_client(self, client, loop):
         """Handle client requests."""
         try:
-            data = await reader.read(1024)
-            if data:
+            # クライアントからの接続を永続的に待機
+            while True:
+                data = await loop.sock_recv(client, 1024)
+                if not data:
+                    break  # クライアントが切断した場合に終了
                 request = json.loads(data.decode())
                 self.logger.debug(f"Received request: {request}")
 
@@ -84,12 +92,10 @@ class ChatServer:
 
                 # クライアントへのレスポンス送信
                 try:
-                    writer.write(json.dumps(response).encode())
-                    await writer.drain()  # Ensure the message is sent before continuing
+                    await loop.sock_sendall(client, json.dumps(response).encode())
                 except (BrokenPipeError, ConnectionResetError) as e:
                     self.logger.error(f"Error sending data to client: {e}")
-                    if writer in self.clients:
-                        self.clients.remove(writer)  # 切断されたクライアントをリストから削除
+                    client.close()
 
                 # メッセージが送信された場合、そのメッセージを全クライアントに送信
                 if action == 'add_message':
@@ -105,18 +111,19 @@ class ChatServer:
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
             response = {"status": "error", "message": str(e)}
-            writer.write(json.dumps(response).encode())
-            await writer.drain()
+            await loop.sock_sendall(client, json.dumps(response).encode())
 
         finally:
             # クライアント切断時にリストから削除
             try:
-                if writer in self.clients:
-                    self.clients.remove(writer)
+                if client in self.clients:
+                    self.clients.remove(client)
+                    self.logger.info(f"Disconnected client: {client}")
             except ValueError:
-                self.logger.warning(f"Writer {writer} was not in the client list.")
-            writer.close()
-            await writer.wait_closed()
+                self.logger.warning(f"Client {client} was not in the client list.")
+            client.close()
+            self.logger.info(f"Client connection closed: {client}")
+
 
     async def route_request(self, action, request):
         """Route client actions to the appropriate database methods."""

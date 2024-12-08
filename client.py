@@ -4,6 +4,7 @@ import curses  # cursesライブラリを使用
 import json  # JSONの操作を追加
 import sys
 import time
+import asyncio
 
 
 # Server configuration
@@ -53,7 +54,7 @@ def receive_messages(client_socket, stdscr, messages):
 
 
 # リクエスト送信
-def send_request(action, data, client_socket):
+async def send_request(action, data, client_socket):
     """Send a request to the chat server."""
     host = "127.0.0.1"
     port = 6001
@@ -70,7 +71,7 @@ def send_request(action, data, client_socket):
 
 
 # サーバーに接続し、チャットを開始する
-def start_client(stdscr):
+async def start_client(stdscr):
     stdscr.clear()  # 画面をクリア
 
     # サーバーに接続
@@ -114,7 +115,7 @@ def start_client(stdscr):
 
             # ユーザー名をサーバーデータベースで検索
             search_user = {"username": username, "password": password}
-            result = send_request("login", search_user, client_socket)
+            result = await send_request("login", search_user, client_socket)
             if result["status"] == "success":
                 session_id = result["session_id"]
                 stdscr.clear()
@@ -155,13 +156,14 @@ def start_client(stdscr):
 
             # ユーザーを追加し、そのままログイン
             user_data = {"username": username, "password": password}
-            add_result = send_request("add_user", user_data, client_socket)
+            add_result = await send_request("add_user", user_data, client_socket)
+            print(add_result)
             # ユーザーが既に存在していたらエラー表示
             if add_result["status"] != "success":
                 stdscr.addstr(5, 0, "The user exists")
             else:
                 time.sleep(5.0)
-                login_result = send_request("login", user_data, client_socket)
+                login_result = await send_request("login", user_data, client_socket)
                 if login_result["status"] == "success":
                     session_id = result["session_id"]
                     stdscr.refresh()
@@ -191,7 +193,7 @@ def start_client(stdscr):
     curses.noecho()  # 入力表示を終了
 
     create_room_data = {"room_name": room, "session_id": session_id}
-    room_result = send_request("create_room", create_room_data, client_socket)
+    room_result = await send_request("create_room", create_room_data, client_socket)
     print(room_result)
     if room_result["status"] == "success":
         room_id = room_result["room_id"]
@@ -257,7 +259,7 @@ def start_client(stdscr):
                 "room_id": room_id,
                 "message": msg_content,
             }
-            send_request("add_message", message, client_socket)
+            await send_request("add_message", message, client_socket)
 
             # 入力欄をリセット
             stdscr.move(curses.LINES - 2, 5)  # 入力欄のカーソル位置をリセット
@@ -271,4 +273,6 @@ def start_client(stdscr):
 
 
 if __name__ == "__main__":
-    curses.wrapper(start_client)
+    def wrapper(stdscr):
+        asyncio.run(start_client(stdscr))
+    curses.wrapper(wrapper)
