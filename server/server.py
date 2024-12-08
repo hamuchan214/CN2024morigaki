@@ -100,6 +100,7 @@ class ChatServer:
                         'user_id': request.get('user_id')
                     })
                     await self.broadcast_message(message_data)
+                    self.logger.info(f"Broadcasted message: {message_data}")
                 
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
@@ -130,6 +131,7 @@ class ChatServer:
             login_result = await self.db.login(username, password)
         
             if login_result["status"] == "success":
+                self.logger.info(f"User {username} logged in.")
                 user_id = login_result["user_id"]
                 session_id = self.create_session(user_id)
                 return {"status": "success", "session_id": session_id}
@@ -137,6 +139,7 @@ class ChatServer:
                 return login_result
         
         elif action == 'get_rooms_by_user':
+            self.logger.debug("get_rooms_by_user")
             user_id = request.get('user_id')
             return await self.db.get_rooms_by_user(user_id)
         
@@ -156,6 +159,7 @@ class ChatServer:
             save_result = await self.db.save_message_async(user_id, room_id, message)
 
             if save_result["status"] == "success":
+                self.logger.info(f"Message saved with ID: {save_result['message_id']}")
                 return {"status": "success", "message_id": save_result["message_id"]}
             else:
                 return {"status": "error", "message": save_result["message"]}
@@ -171,6 +175,7 @@ class ChatServer:
             create_room_result = await self.db.create_room_async(room_name)
 
             if create_room_result["status"] == "success":
+                self.logger.info(f"Room created with ID: {create_room_result['room_id']}")
                 return {"status": "success", "room_id": create_room_result["room_id"]}
             else:
                 return {"status": "error", "message": create_room_result["message"]}
