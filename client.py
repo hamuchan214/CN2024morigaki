@@ -58,10 +58,9 @@ def send_request(action, data, client_socket):
     port = 6001
 
     try:
-
         request = {"action": action, **data}
-        print(request)
         client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
+        print(json.dumps(request).encode())
 
         response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
         response = json.loads(response_data.decode())
