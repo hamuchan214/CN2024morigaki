@@ -161,13 +161,8 @@ async def start_client(stdscr):
             if add_result["status"] != "success":
                 stdscr.addstr(5, 0, "The user exists")
             else:
-<<<<<<< HEAD
                 time.sleep(0.5)
-                login_result = send_request("login", user_data, client_socket)
-=======
-                time.sleep(5.0)
                 login_result = await send_request("login", user_data, client_socket)
->>>>>>> origin/Tanaka
                 if login_result["status"] == "success":
                     session_id = login_result["session_id"]
                     stdscr.clear()
@@ -196,20 +191,12 @@ async def start_client(stdscr):
     room = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
     curses.noecho()  # 入力表示を終了
 
-<<<<<<< HEAD
-    room_data = {"room_name": room, "session_id": session_id}
-    join_result = send_request("join_room", room_data, client_socket)
-    print(join_result)
-    if join_result["status"] == "success":
-        room_id = join_result["room_id"]
-=======
     create_room_data = {"room_name": room, "session_id": session_id}
     room_result = await send_request("create_room", create_room_data, client_socket)
     print(room_result)
     if room_result["status"] == "success":
         room_id = room_result["room_id"]
         print(f"Room ID: {room_id}")
->>>>>>> origin/Tanaka
     else:
         room_result = send_request("create_room", room_data, client_socket)
         if room_result["status"] == "success":
@@ -289,6 +276,8 @@ async def start_client(stdscr):
 
 
 if __name__ == "__main__":
+
     def wrapper(stdscr):
         asyncio.run(start_client(stdscr))
+
     curses.wrapper(wrapper)

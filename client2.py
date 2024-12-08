@@ -1,23 +1,9 @@
 import socket
 import json
 
-<<<<<<< HEAD
 
-def send_request(action, data):
-    """Send a request to the chat server."""
-    host = "127.0.0.1"
-    port = 6001
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.connect((host, port))
-
-            # リクエストデータの形式を修正
-            request = {"action": action, **data}  # 'data' を直接リクエストに統合
-            client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
-=======
 class ChatClient:
-    def __init__(self, host='127.0.0.1', port=6001):
+    def __init__(self, host="127.0.0.1", port=6001):
         self.host = host
         self.port = port
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,14 +13,12 @@ class ChatClient:
         """Send a request to the chat server."""
         try:
             # リクエストデータの形式を修正
-            request = {
-                "action": action,
-                **data  # 'data' を直接リクエストに統合
-            }
+            request = {"action": action, **data}  # 'data' を直接リクエストに統合
             self.client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
->>>>>>> origin/Tanaka
 
-            response_data = self.client_socket.recv(1024)  # サーバーからのレスポンスを受信
+            response_data = self.client_socket.recv(
+                1024
+            )  # サーバーからのレスポンスを受信
             response = json.loads(response_data.decode())
             return response
         except Exception as e:
@@ -50,33 +34,26 @@ if __name__ == "__main__":
     username = "test_user"
     password = "test_password"
 
-<<<<<<< HEAD
-    # # 1. Add User
-    # print("Adding user...")
-    # add_user_response = send_request("add_user", {"username": username, "password": password})
-    # print(f"Response: {add_user_response}")
-
-    # if add_user_response["status"] != "success":
-    #     print("Failed to add user. Exiting...")
-    #     exit()
-=======
     # クライアントインスタンスを作成
     client = ChatClient()
 
     # 1. Add User
     print("Adding user...")
-    add_user_response = client.send_request("add_user", {"username": username, "password": password})
+    add_user_response = client.send_request(
+        "add_user", {"username": username, "password": password}
+    )
     print(f"Response: {add_user_response}")
 
     if add_user_response["status"] != "success":
         print("Failed to add user. Exiting...")
         client.close()
         exit()
->>>>>>> origin/Tanaka
 
     # 2. Login User
     print("Logging in user...")
-    login_response = client.send_request("login", {"username": username, "password": password})
+    login_response = client.send_request(
+        "login", {"username": username, "password": password}
+    )
     print(f"Response: {login_response}")
 
     if login_response["status"] == "success":
@@ -90,13 +67,9 @@ if __name__ == "__main__":
     # 3. Create Room
     print("Creating chat room...")
     room_name = "Test Room"
-<<<<<<< HEAD
-    create_room_response = send_request(
+    create_room_response = client.send_request(
         "create_room", {"session_id": session_id, "room_name": room_name}
     )
-=======
-    create_room_response = client.send_request("create_room", {"session_id": session_id, "room_name": room_name})
->>>>>>> origin/Tanaka
     print(f"Response: {create_room_response}")
 
     if create_room_response["status"] == "success":
@@ -123,7 +96,9 @@ if __name__ == "__main__":
 
     # 5. Retrieve Messages
     print("Retrieving messages from room...")
-    get_messages_response = client.send_request("get_messages_by_room", {"room_id": room_id})
+    get_messages_response = client.send_request(
+        "get_messages_by_room", {"room_id": room_id}
+    )
     print(f"Response: {get_messages_response}")
 
     if get_messages_response["status"] == "success":

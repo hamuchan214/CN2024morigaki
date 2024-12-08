@@ -88,61 +88,24 @@ class ChatServer:
 
             while True:
                 try:
-<<<<<<< HEAD
-                    data = await asyncio.wait_for(
-                        reader.read(1024), timeout=300
-                    )  # 5分タイムアウト
-                    if not data:
-                        break
-                    request = json.loads(data.decode())
-                    self.logger.debug(f"Received request: {request}")
-
-                    action = request.get("action")
-                    response = await self.route_request(action, request)
-                    writer.write(json.dumps(response).encode())
-                    await writer.drain()
-
-                    if action == "add_message":
-                        message_data = json.dumps(
-                            {
-                                "action": "new_message",
-                                "message": request.get("message"),
-                                "room_id": request.get("room_id"),
-                                "user_id": request.get("user_id"),
-                            }
-                        )
-                        await self.broadcast_message(message_data)
-
-                except asyncio.TimeoutError:
-                    self.logger.warning(f"Client {peername} timed out.")
-                    break
-
-        except Exception as e:
-            self.logger.error(f"Error handling client: {e}")
-        finally:
-            async with self.clients_lock:
-                if writer in self.clients:
-                    self.clients.remove(writer)
-            writer.close()
-            await writer.wait_closed()
-            self.logger.info(f"Client disconnected: {peername}")
-=======
                     await loop.sock_sendall(client, json.dumps(response).encode())
                 except (BrokenPipeError, ConnectionResetError) as e:
                     self.logger.error(f"Error sending data to client: {e}")
                     client.close()
 
                 # メッセージが送信された場合、そのメッセージを全クライアントに送信
-                if action == 'add_message':
-                    message_data = json.dumps({
-                        'action': 'new_message',
-                        'message': request.get('message'),
-                        'room_id': request.get('room_id'),
-                        'user_id': request.get('user_id')
-                    })
+                if action == "add_message":
+                    message_data = json.dumps(
+                        {
+                            "action": "new_message",
+                            "message": request.get("message"),
+                            "room_id": request.get("room_id"),
+                            "user_id": request.get("user_id"),
+                        }
+                    )
                     await self.broadcast_message(message_data, loop)
                     self.logger.info(f"Broadcasted message: {message_data}")
-                
+
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
             response = {"status": "error", "message": str(e)}
@@ -158,8 +121,6 @@ class ChatServer:
                 self.logger.warning(f"Client {client} was not in the client list.")
             client.close()
             self.logger.info(f"Client connection closed: {client}")
-
->>>>>>> origin/Tanaka
 
     async def route_request(self, action, request):
         """クライアントアクションを適切なメソッドにルーティングする。"""
@@ -248,25 +209,6 @@ class ChatServer:
             self.logger.error(f"Error in action '{action}': {e}")
             return {"status": "error", "message": str(e)}
 
-<<<<<<< HEAD
-    async def broadcast_message(self, message):
-        """接続中の全クライアントにメッセージをブロードキャストする。"""
-        to_remove = []
-        async with self.clients_lock:
-            for writer in self.clients:
-                try:
-                    writer.write(message.encode())
-                    await writer.drain()
-                except Exception as e:
-                    self.logger.error(f"Broadcast error: {e}")
-                    to_remove.append(writer)
-
-            for writer in to_remove:
-                self.clients.remove(writer)
-                writer.close()
-                await writer.wait_closed()
-
-=======
     async def broadcast_message(self, message_data, loop):
         for client in self.clients:
             try:
@@ -274,7 +216,7 @@ class ChatServer:
             except (BrokenPipeError, ConnectionResetError) as e:
                 self.logger.error(f"Error broadcasting message to client: {e}")
                 self.clients.remove(client)
->>>>>>> origin/Tanaka
+
 
 if __name__ == "__main__":
     chat_server = ChatServer()
