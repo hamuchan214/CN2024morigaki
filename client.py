@@ -3,6 +3,7 @@ import threading
 import curses  # cursesライブラリを使用
 import json  # JSONの操作を追加
 import sys
+import time
 
 
 # Server configuration
@@ -60,9 +61,8 @@ def send_request(action, data, client_socket):
     try:
         request = {"action": action, **data}
         client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
-        print(json.dumps(request).encode())
 
-        response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
+        response_data = client_socket.recv(2048)  # サーバーからのレスポンスを受信
         response = json.loads(response_data.decode())
         return response
     except Exception as e:
@@ -83,11 +83,11 @@ def start_client(stdscr):
         return
 
     while True:
-        stdscr.addstr(0, 0, "Input i or o (Login:i/Logon:o):")
-        stdscr.addstr(1, 0, ">")
+        stdscr.addstr(0, 0, 'Input "i" or "o" (Login:i/Logon:o):')
+        stdscr.addstr(1, 0, "> ")
         stdscr.refresh()
         curses.echo()  # 入力内容を表示
-        ILoginOLogon = stdscr.getstr(1, 3, 1).decode()
+        ILoginOLogon = stdscr.getstr(1, 3, 1).decode()  # login の場合:i ,logonの場合:o
         curses.noecho()  # 入力表示を終了
 
         stdscr.clear()
@@ -117,6 +117,7 @@ def start_client(stdscr):
             result = send_request("login", search_user, client_socket)
             if result["status"] == "success":
                 session_id = result["session_id"]
+                stdscr.clear()
                 break
             else:
                 stdscr.addstr(5, 0, "Login failed. Please try again.")
@@ -150,27 +151,33 @@ def start_client(stdscr):
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
             password = stdscr.getstr(4, 3, 20).decode()  # ルーム名を取得
+            curses.noecho()
 
             # ユーザーを追加し、そのままログイン
             user_data = {"username": username, "password": password}
-            send_request("add_user", user_data, client_socket)
-            result = send_request("login", user_data, client_socket)
-            if result["status"] == "success":
-                session_id = result["session_id"]
-                break
+            add_result = send_request("add_user", user_data, client_socket)
+            # ユーザーが既に存在していたらエラー表示
+            if add_result["status"] != "success":
+                stdscr.addstr(5, 0, "The user exists")
             else:
-                stdscr.addstr(5, 0, "Login failed. Please try again.")
-                stdscr.addstr(6, 0, "Continue? y:n")
-                stdscr.addstr(7, 0, ">")
-                stdscr.refresh()
-                curses.echo()  # 入力内容を表示
-                Continue = stdscr.getstr(7, 1, 1).decode()
-                if Continue == "y":  # 続ける場合
-                    stdscr.clear()
-                else:  # 終了
-                    sys.exit()
-
-        stdscr.clear()
+                time.sleep(5.0)
+                login_result = send_request("login", user_data, client_socket)
+                if login_result["status"] == "success":
+                    session_id = result["session_id"]
+                    stdscr.refresh()
+                    break
+                else:
+                    stdscr.addstr(5, 0, "Login failed. Please try again.")
+            # 不具合が発生した場合
+            stdscr.addstr(6, 0, "Continue? y:n")
+            stdscr.addstr(7, 0, ">")
+            stdscr.refresh()
+            curses.echo()  # 入力内容を表示
+            Continue = stdscr.getstr(7, 1, 1).decode()
+            if Continue == "y":  # 続ける場合
+                stdscr.clear()
+            else:  # 終了
+                sys.exit()
 
     curses.noecho()  # 入力表示を終了
 
@@ -183,6 +190,15 @@ def start_client(stdscr):
     room = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
     curses.noecho()  # 入力表示を終了
 
+    create_room_data = {"room_name": room, "session_id": session_id}
+    room_result = send_request("create_room", create_room_data, client_socket)
+    print(room_result)
+    if room_result["status"] == "success":
+        room_id = room_result["room_id"]
+        print(f"Room ID: {room_id}")
+    else:
+        print("Failed to create room. Exiting...")
+        exit()
     # メッセージ表示領域の管理
     messages = []  # メッセージを保持するリスト
     max_lines = curses.LINES - 7  # "You:"の2行上までメッセージを表示
@@ -233,19 +249,15 @@ def start_client(stdscr):
 
             # メッセージをリストに追加
             messages.append(f"You: {msg_content}")
-            send_request("add")
 
             # サーバーに送信
-            try:
-                # メッセージをJSON形式で送信
-                message = {"username": username, "room": room, "message": msg_content}
-                client_socket.sendall(
-                    json.dumps(message).encode("utf-8")  # バイトデータとして送信
-                )
-            except BrokenPipeError:
-                stdscr.addstr("\nConnection lost. Unable to send message.\n")
-                stdscr.refresh()
-                break
+            # メッセージをJSON形式で送信
+            message = {
+                "session_id": session_id,
+                "room_id": room_id,
+                "message": msg_content,
+            }
+            send_request("add_message", message, client_socket)
 
             # 入力欄をリセット
             stdscr.move(curses.LINES - 2, 5)  # 入力欄のカーソル位置をリセット
