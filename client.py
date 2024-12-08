@@ -80,33 +80,45 @@ def start_client(stdscr):
         stdscr.addstr(f"Error connecting to server: {e}\n")
         stdscr.refresh()
         return
-
     client_socket.sendall(json.dumps("").encode("utf-8"))
+    stdscr.addstr(0, 0, "Input i or o (Login:i/Logon:o):")
+    stdscr.addstr(1, 0, ">")
 
-    # ユーザー名の入力プロンプト表示
-    while True:
-        stdscr.addstr(0, 0, "Enter your username: ")
-        stdscr.refresh()
-        stdscr.addstr(1, 0, "> ")  # 改行して次の行で入力を促す
-        stdscr.refresh()
-        curses.echo()  # 入力内容を表示
-        username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
-        curses.noecho()  # 入力表示を終了
+    ILoginOLogon = stdscr.getstr(1, 3, 1)
 
-        # 改行してから、ルーム名の入力プロンプト表示
-        stdscr.addstr(2, 0, "Enter your password: ")
-        stdscr.refresh()
-        stdscr.addstr(3, 0, "> ")  # 次の行で入力を促す
-        stdscr.refresh()
-        curses.echo()  # 入力内容を表示
-        password = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
+    stdscr.clear()
 
-        # ユーザー名をサーバーデータベースで検索
-        search_user = {"user_id": username, "password": password}
-        result = send_request("login", search_user, client_socket)
-        if result["status"] == "success":
-            session_id = result["session_id"]
-            break
+    if ILoginOLogon == "i":
+        # ユーザー名の入力プロンプト表示
+        while True:
+            stdscr.addstr(0, 0, "LOGIN")
+            stdscr.addstr(1, 0, "Enter your username: ")
+            stdscr.refresh()
+            stdscr.addstr(2, 0, "> ")  # 改行して次の行で入力を促す
+            stdscr.refresh()
+            curses.echo()  # 入力内容を表示
+            username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
+            curses.noecho()  # 入力表示を終了
+
+            # 改行してから、ルーム名の入力プロンプト表示
+            stdscr.addstr(3, 0, "Enter your password: ")
+            stdscr.refresh()
+            stdscr.addstr(4, 0, "> ")  # 次の行で入力を促す
+            stdscr.refresh()
+            curses.echo()  # 入力内容を表示
+            password = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
+
+            # ユーザー名をサーバーデータベースで検索
+            search_user = {"user_id": username, "password": password}
+            result = send_request("login", search_user, client_socket)
+            if result["status"] == "success":
+                session_id = result["session_id"]
+                break
+            else:
+                stdscr.addstr(5, 0, "Login failed. Please try again.")
+                stdscr.addstr(6, 0, "")
+
+    # elif ILoginOLogon == "o":
 
     curses.noecho()  # 入力表示を終了
 
