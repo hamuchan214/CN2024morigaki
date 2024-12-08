@@ -60,9 +60,10 @@ def send_request(action, data, client_socket):
 
     try:
         request = {"action": action, **data}
+        print(request)
         client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
 
-        response_data = client_socket.recv(2048)  # サーバーからのレスポンスを受信
+        response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
         response = json.loads(response_data.decode())
         return response
     except Exception as e:
@@ -96,7 +97,6 @@ def start_client(stdscr):
             # ユーザー名の入力プロンプト表示
             stdscr.addstr(0, 0, "LOG IN")
             stdscr.addstr(1, 0, "Enter your username: ")
-            stdscr.refresh()
             stdscr.addstr(2, 0, "> ")  # 改行して次の行で入力を促す
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
@@ -105,7 +105,6 @@ def start_client(stdscr):
 
             # password
             stdscr.addstr(3, 0, "Enter your password: ")
-            stdscr.refresh()
             stdscr.addstr(4, 0, "> ")  # 次の行で入力を促す
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
@@ -160,11 +159,11 @@ def start_client(stdscr):
             if add_result["status"] != "success":
                 stdscr.addstr(5, 0, "The user exists")
             else:
-                time.sleep(5.0)
+                time.sleep(0.5)
                 login_result = send_request("login", user_data, client_socket)
                 if login_result["status"] == "success":
-                    session_id = result["session_id"]
-                    stdscr.refresh()
+                    session_id = login_result["session_id"]
+                    stdscr.clear()
                     break
                 else:
                     stdscr.addstr(5, 0, "Login failed. Please try again.")
@@ -190,15 +189,18 @@ def start_client(stdscr):
     room = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
     curses.noecho()  # 入力表示を終了
 
-    create_room_data = {"room_name": room, "session_id": session_id}
-    room_result = send_request("create_room", create_room_data, client_socket)
-    print(room_result)
-    if room_result["status"] == "success":
-        room_id = room_result["room_id"]
-        print(f"Room ID: {room_id}")
+    room_data = {"room_name": room, "session_id": session_id}
+    join_result = send_request("join_room", room_data, client_socket)
+    print(join_result)
+    if join_result["status"] == "success":
+        room_id = join_result["room_id"]
     else:
-        print("Failed to create room. Exiting...")
-        exit()
+        room_result = send_request("create_room", room_data, client_socket)
+        if room_result["status"] == "success":
+            room_id = room_result["room_id"]
+        else:
+            print("Failed to create room. Exiting...")
+            exit()
     # メッセージ表示領域の管理
     messages = []  # メッセージを保持するリスト
     max_lines = curses.LINES - 7  # "You:"の2行上までメッセージを表示

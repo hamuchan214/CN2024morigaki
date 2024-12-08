@@ -1,20 +1,18 @@
 import socket
 import json
 
+
 def send_request(action, data):
     """Send a request to the chat server."""
-    host = '127.0.0.1'
+    host = "127.0.0.1"
     port = 6001
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.connect((host, port))
-            
+
             # リクエストデータの形式を修正
-            request = {
-                "action": action,
-                **data  # 'data' を直接リクエストに統合
-            }
+            request = {"action": action, **data}  # 'data' を直接リクエストに統合
             client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
 
             response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
@@ -29,14 +27,14 @@ if __name__ == "__main__":
     username = "test_user"
     password = "test_password"
 
-    # 1. Add User
-    print("Adding user...")
-    add_user_response = send_request("add_user", {"username": username, "password": password})
-    print(f"Response: {add_user_response}")
+    # # 1. Add User
+    # print("Adding user...")
+    # add_user_response = send_request("add_user", {"username": username, "password": password})
+    # print(f"Response: {add_user_response}")
 
-    if add_user_response["status"] != "success":
-        print("Failed to add user. Exiting...")
-        exit()
+    # if add_user_response["status"] != "success":
+    #     print("Failed to add user. Exiting...")
+    #     exit()
 
     # 2. Login User
     print("Logging in user...")
@@ -53,7 +51,9 @@ if __name__ == "__main__":
     # 3. Create Room
     print("Creating chat room...")
     room_name = "Test Room"
-    create_room_response = send_request("create_room", {"session_id": session_id, "room_name": room_name})
+    create_room_response = send_request(
+        "create_room", {"session_id": session_id, "room_name": room_name}
+    )
     print(f"Response: {create_room_response}")
 
     if create_room_response["status"] == "success":
@@ -68,7 +68,7 @@ if __name__ == "__main__":
     message_content = "Hello, this is a test message."
     add_message_response = send_request(
         "add_message",
-        {"session_id": session_id, "room_id": room_id, "message": message_content}
+        {"session_id": session_id, "room_id": room_id, "message": message_content},
     )
     print(f"Response: {add_message_response}")
 
