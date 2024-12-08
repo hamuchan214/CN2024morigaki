@@ -5,6 +5,7 @@ from database import AsyncDatabase
 from logging import getLogger, DEBUG, INFO
 import colorlog
 from utils import generate_session_id
+import socket
 
 # colorlog用の設定
 LOG_FORMAT = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -59,25 +60,35 @@ class ChatServer:
             return
         self.logger.info("Database setup completed successfully.")
 
-        server_socket = await asyncio.start_server(
-            self.handle_client, self.host, self.port
-        )
-        self.logger.info(f"Server listening on {self.host}:{self.port}")
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setblocking(False)
+        server.bind((self.host, self.port))
+        server.listen(5)
+        loop = asyncio.get_event_loop()
+        while True:
+            client, address = await loop.sock_accept(server)
+            self.logger.info(f"Accepted new client connection: {address}")
+            client.setblocking(False)
+            self.clients.append(client)  # 新しいクライアントをリストに追加
+            asyncio.create_task(self.handle_client(client, loop))
 
-        async with server_socket:
-            await server_socket.serve_forever()
-
-    async def handle_client(self, reader, writer):
-        """クライアントからのリクエストを処理する。"""
+    async def handle_client(self, client, loop):
+        """Handle client requests."""
         try:
-            peername = writer.get_extra_info("peername")
-            self.logger.info(f"Client connected: {peername}")
+            # クライアントからの接続を永続的に待機
+            while True:
+                data = await loop.sock_recv(client, 1024)
+                if not data:
+                    break  # クライアントが切断した場合に終了
+                request = json.loads(data.decode())
+                self.logger.debug(f"Received request: {request}")
 
             async with self.clients_lock:
                 self.clients.append(writer)
 
             while True:
                 try:
+<<<<<<< HEAD
                     data = await asyncio.wait_for(
                         reader.read(1024), timeout=300
                     )  # 5分タイムアウト
@@ -115,6 +126,40 @@ class ChatServer:
             writer.close()
             await writer.wait_closed()
             self.logger.info(f"Client disconnected: {peername}")
+=======
+                    await loop.sock_sendall(client, json.dumps(response).encode())
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    self.logger.error(f"Error sending data to client: {e}")
+                    client.close()
+
+                # メッセージが送信された場合、そのメッセージを全クライアントに送信
+                if action == 'add_message':
+                    message_data = json.dumps({
+                        'action': 'new_message',
+                        'message': request.get('message'),
+                        'room_id': request.get('room_id'),
+                        'user_id': request.get('user_id')
+                    })
+                    await self.broadcast_message(message_data, loop)
+                    self.logger.info(f"Broadcasted message: {message_data}")
+                
+        except Exception as e:
+            self.logger.error(f"Error handling client: {e}")
+            response = {"status": "error", "message": str(e)}
+            await loop.sock_sendall(client, json.dumps(response).encode())
+
+        finally:
+            # クライアント切断時にリストから削除
+            try:
+                if client in self.clients:
+                    self.clients.remove(client)
+                    self.logger.info(f"Disconnected client: {client}")
+            except ValueError:
+                self.logger.warning(f"Client {client} was not in the client list.")
+            client.close()
+            self.logger.info(f"Client connection closed: {client}")
+
+>>>>>>> origin/Tanaka
 
     async def route_request(self, action, request):
         """クライアントアクションを適切なメソッドにルーティングする。"""
@@ -203,6 +248,7 @@ class ChatServer:
             self.logger.error(f"Error in action '{action}': {e}")
             return {"status": "error", "message": str(e)}
 
+<<<<<<< HEAD
     async def broadcast_message(self, message):
         """接続中の全クライアントにメッセージをブロードキャストする。"""
         to_remove = []
@@ -220,6 +266,15 @@ class ChatServer:
                 writer.close()
                 await writer.wait_closed()
 
+=======
+    async def broadcast_message(self, message_data, loop):
+        for client in self.clients:
+            try:
+                await loop.sock_sendall(client, message_data.encode())
+            except (BrokenPipeError, ConnectionResetError) as e:
+                self.logger.error(f"Error broadcasting message to client: {e}")
+                self.clients.remove(client)
+>>>>>>> origin/Tanaka
 
 if __name__ == "__main__":
     chat_server = ChatServer()

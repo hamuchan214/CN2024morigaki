@@ -2,13 +2,29 @@ import sqlite3
 import asyncio
 import hashlib
 import uuid
+from logging import getLogger, DEBUG
+import colorlog
 
+LOG_FORMAT = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_LEVEL = DEBUG
+LOG_DATE_FORMAT = "%H:%M:%S"
+
+def setup_logger():
+    handler = colorlog.StreamHandler()
+    formatter = colorlog.ColoredFormatter(LOG_FORMAT)
+    handler.setFormatter(formatter)
+    
+    logger = getLogger(__name__)
+    logger.addHandler(handler)
+    logger.setLevel(LOG_LEVEL)
+    return logger
 
 class AsyncDatabase:
     def __init__(self, db_name):
         self.db_name = db_name
         self.connection = sqlite3.connect(db_name, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row  # Allows accessing columns by name
+        self.logger = setup_logger()
 
     async def execute_async(self, query, params=None):
         """Execute a query asynchronously using cursor."""
@@ -125,10 +141,13 @@ class AsyncDatabase:
                 self.connection.commit()
                 user_id = cursor.lastrowid  # Fetch the last inserted row ID
                 cursor.close()
+                self.logger.info(f"New user added with ID: {user_id}")
                 return {"status": "success", "user_id": user_id}
             except sqlite3.IntegrityError:
+                self.logger.error("Username:{user_name} already exists")
                 return {"status": "error", "message": "Username already exists"}
             except Exception as e:
+                self.logger.error(f"Error adding user: {e}")
                 return {"status": "error", "message": str(e)}
 
         return await loop.run_in_executor(None, execute_and_fetch_lastrowid)
