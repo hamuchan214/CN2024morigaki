@@ -1,23 +1,20 @@
 import socket
-import threading
-import curses  # cursesライブラリを使用
-import json  # JSONの操作を追加
+import curses
+import json
 import sys
-import time
 import asyncio
-
 
 # Server configuration
 HOST = "127.0.0.1"  # サーバーのIPアドレス
 PORT = 6001  # サーバーのポート番号
 
 
-def receive_messages(client_socket, stdscr, messages):
+async def receive_messages(client_socket, stdscr, messages):
     stdscr.scrollok(True)  # 画面のスクロールを許可
 
     while True:
         try:
-            message = client_socket.recv(1024)  # バイトデータで受信
+            message = await asyncio.to_thread(client_socket.recv, 1024)  # 非同期で受信
             if message:
                 try:
                     message = message.decode("utf-8")  # バイトデータを文字列にデコード
@@ -63,7 +60,7 @@ async def send_request(action, data, client_socket):
         request = {"action": action, **data}
         client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
 
-        response_data = client_socket.recv(2048)  # サーバーからのレスポンスを受信
+        response_data = await asyncio.to_thread(client_socket.recv, 2048)  # 非同期で受信
         response = json.loads(response_data.decode())
         return response
     except Exception as e:
@@ -135,7 +132,6 @@ async def start_client(stdscr):
                 else:  # 終了
                     sys.exit()
         else:
-            # elif ILoginOLogon == "o":
             # ユーザー名の入力プロンプト表示
             stdscr.addstr(0, 0, "LOG ON")
             stdscr.addstr(1, 0, "Enter your username: ")
@@ -151,21 +147,20 @@ async def start_client(stdscr):
             stdscr.addstr(4, 0, "> ")  # 次の行で入力を促す
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
-            password = stdscr.getstr(4, 3, 20).decode()  # ルーム名を取得
-            curses.noecho()
+            password = stdscr.getstr(4, 3, 20).decode()  # パスワードを取得
+            curses.noecho()  # 入力表示を終了
 
             # ユーザーを追加し、そのままログイン
             user_data = {"username": username, "password": password}
             add_result = await send_request("add_user", user_data, client_socket)
-            print(add_result)
-            # ユーザーが既に存在していたらエラー表示
+
             if add_result["status"] != "success":
                 stdscr.addstr(5, 0, "The user exists")
             else:
-                time.sleep(5.0)
+                await asyncio.sleep(5.0)
                 login_result = await send_request("login", user_data, client_socket)
                 if login_result["status"] == "success":
-                    session_id = result["session_id"]
+                    session_id = login_result["session_id"]
                     stdscr.refresh()
                     break
                 else:
@@ -201,6 +196,7 @@ async def start_client(stdscr):
     else:
         print("Failed to create room. Exiting...")
         exit()
+
     # メッセージ表示領域の管理
     messages = []  # メッセージを保持するリスト
     max_lines = curses.LINES - 7  # "You:"の2行上までメッセージを表示
@@ -209,10 +205,8 @@ async def start_client(stdscr):
     # 最初に "You entering room" を表示
     entering_room_msg = f"You entering room {room}"
 
-    # メッセージ受信用のスレッドを開始
-    threading.Thread(
-        target=receive_messages, args=(client_socket, stdscr, messages), daemon=True
-    ).start()
+    # メッセージ受信用の非同期タスクを開始
+    asyncio.create_task(receive_messages(client_socket, stdscr, messages))
 
     # メッセージ送信ループ
     try:
