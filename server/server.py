@@ -105,7 +105,7 @@ class ChatServer:
                         'room_id': request.get('room_id'),
                         'user_id': request.get('user_id')
                     })
-                    await self.broadcast_message(message_data)
+                    await self.broadcast_message(message_data, loop)
                     self.logger.info(f"Broadcasted message: {message_data}")
                 
         except Exception as e:
@@ -190,17 +190,13 @@ class ChatServer:
         else:
             return {"status": "error", "message": "Invalid action"}
 
-    async def broadcast_message(self, message):
-        """接続中の全クライアントにメッセージをブロードキャスト"""
-        for client_writer in self.clients:
+    async def broadcast_message(self, message_data, loop):
+        for client in self.clients:
             try:
-                client_writer.write(message.encode())
-                await client_writer.drain()
-            except Exception as e:
+                await loop.sock_sendall(client, message_data.encode())
+            except (BrokenPipeError, ConnectionResetError) as e:
                 self.logger.error(f"Error broadcasting message to client: {e}")
-                self.clients.remove(client_writer)  # エラーが発生したクライアントはリストから削除
-                client_writer.close()
-                await client_writer.wait_closed()
+                self.clients.remove(client)
 
 if __name__ == "__main__":
     chat_server = ChatServer()
