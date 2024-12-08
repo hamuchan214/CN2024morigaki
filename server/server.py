@@ -1,9 +1,8 @@
 import asyncio
-import socket
 import json
 import time
 from database import AsyncDatabase
-from logging import getLogger, INFO, DEBUG, WARNING, ERROR
+from logging import getLogger, DEBUG
 import colorlog
 from utils import generate_session_id
 
@@ -17,17 +16,17 @@ def setup_logger():
     formatter = colorlog.ColoredFormatter(LOG_FORMAT)
     handler.setFormatter(formatter)
     
-    loger = getLogger(__name__)
-    loger.addHandler(handler)
-    loger.setLevel(LOG_LEVEL)
-    return loger
+    logger = getLogger(__name__)
+    logger.addHandler(handler)
+    logger.setLevel(LOG_LEVEL)
+    return logger
 
 class ChatServer:
     def __init__(self, host='127.0.0.1', port=6001):
         self.host = host
         self.port = port
         self.db = AsyncDatabase('chat.db')
-        self.db.server = self #todo:直す database.pyに処理がまたがってるので修正する
+        self.db.server = self  # todo: database.pyに処理がまたがっているので修正する
         self.sessions = {}
         self.clients = []  # 接続中のクライアントを管理するリスト
         self.logger = setup_logger()
@@ -37,7 +36,7 @@ class ChatServer:
         session_id = generate_session_id(user_id)
         exception_time = time.time() + 3600
         self.sessions[session_id] = (user_id, exception_time)
-        print(f"Session created: {self.sessions}")
+        self.logger.debug(f"Session created: {self.sessions}")
         return session_id
     
     # セッションの有効期限を確認
@@ -64,34 +63,33 @@ class ChatServer:
             return
         self.logger.warning("Database setup completed successfully.")
 
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
+        server_socket = await asyncio.start_server(
+            self.handle_client, self.host, self.port
+        )
         self.logger.info(f"Server listening on {self.host}:{self.port}")
 
-        while True:
-            client_socket, client_address = await asyncio.get_running_loop().run_in_executor(
-                None, server_socket.accept
-            )
-            print(f"Connection from {client_address}")
-            # クライアントを管理するリストに追加
-            self.clients.append(client_socket)
-            asyncio.create_task(self.handle_client(client_socket))
+        async with server_socket:
+            await server_socket.serve_forever()
 
-    async def handle_client(self, client_socket):
+    async def handle_client(self, reader, writer):
         """Handle client requests."""
         try:
-            data = await asyncio.get_running_loop().run_in_executor(None, client_socket.recv, 1024)
+            data = await reader.read(1024)
             if data:
                 request = json.loads(data.decode())
-                print(f"Received request: {request}")
+                self.logger.debug(f"Received request: {request}")
 
                 action = request.get('action')
                 response = await self.route_request(action, request)
 
                 # クライアントへのレスポンス送信
-                client_socket.sendall(json.dumps(response).encode())
+                try:
+                    writer.write(json.dumps(response).encode())
+                    await writer.drain()  # Ensure the message is sent before continuing
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    self.logger.error(f"Error sending data to client: {e}")
+                    if writer in self.clients:
+                        self.clients.remove(writer)  # 切断されたクライアントをリストから削除
 
                 # メッセージが送信された場合、そのメッセージを全クライアントに送信
                 if action == 'add_message':
@@ -104,13 +102,20 @@ class ChatServer:
                     await self.broadcast_message(message_data)
                 
         except Exception as e:
-            print(f"Error handling client: {e}")
+            self.logger.error(f"Error handling client: {e}")
             response = {"status": "error", "message": str(e)}
-            client_socket.sendall(json.dumps(response).encode())
+            writer.write(json.dumps(response).encode())
+            await writer.drain()
+
         finally:
             # クライアント切断時にリストから削除
-            self.clients.remove(client_socket)
-            client_socket.close()
+            try:
+                if writer in self.clients:
+                    self.clients.remove(writer)
+            except ValueError:
+                self.logger.warning(f"Writer {writer} was not in the client list.")
+            writer.close()
+            await writer.wait_closed()
 
     async def route_request(self, action, request):
         """Route client actions to the appropriate database methods."""
@@ -175,13 +180,15 @@ class ChatServer:
 
     async def broadcast_message(self, message):
         """接続中の全クライアントにメッセージをブロードキャスト"""
-        for client_socket in self.clients:
+        for client_writer in self.clients:
             try:
-                client_socket.sendall(message.encode())
+                client_writer.write(message.encode())
+                await client_writer.drain()
             except Exception as e:
-                print(f"Error broadcasting message to client: {e}")
-                self.clients.remove(client_socket)  # エラーが発生したクライアントはリストから削除
-                client_socket.close()
+                self.logger.error(f"Error broadcasting message to client: {e}")
+                self.clients.remove(client_writer)  # エラーが発生したクライアントはリストから削除
+                client_writer.close()
+                await client_writer.wait_closed()
 
 if __name__ == "__main__":
     chat_server = ChatServer()
