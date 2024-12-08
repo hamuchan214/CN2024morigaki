@@ -2,6 +2,7 @@ import socket
 import threading
 import curses  # cursesライブラリを使用
 import json  # JSONの操作を追加
+import sys
 
 
 # Server configuration
@@ -59,6 +60,7 @@ def send_request(action, data, client_socket):
     try:
 
         request = {"action": action, **data}
+        print(request)
         client_socket.sendall(json.dumps(request).encode())  # リクエストを送信
 
         response_data = client_socket.recv(1024)  # サーバーからのレスポンスを受信
@@ -81,44 +83,95 @@ def start_client(stdscr):
         stdscr.refresh()
         return
     client_socket.sendall(json.dumps("").encode("utf-8"))
-    stdscr.addstr(0, 0, "Input i or o (Login:i/Logon:o):")
-    stdscr.addstr(1, 0, ">")
+    while True:
+        stdscr.addstr(0, 0, "Input i or o (Login:i/Logon:o):")
+        stdscr.addstr(1, 0, ">")
+        stdscr.refresh()
+        curses.echo()  # 入力内容を表示
+        ILoginOLogon = stdscr.getstr(1, 3, 1).decode()
+        curses.noecho()  # 入力表示を終了
 
-    ILoginOLogon = stdscr.getstr(1, 3, 1)
+        stdscr.clear()
 
-    stdscr.clear()
-
-    if ILoginOLogon == "i":
-        # ユーザー名の入力プロンプト表示
-        while True:
-            stdscr.addstr(0, 0, "LOGIN")
+        if ILoginOLogon == "i":
+            # ユーザー名の入力プロンプト表示
+            stdscr.addstr(0, 0, "LOG IN")
             stdscr.addstr(1, 0, "Enter your username: ")
             stdscr.refresh()
             stdscr.addstr(2, 0, "> ")  # 改行して次の行で入力を促す
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
-            username = stdscr.getstr(1, 3, 20).decode()  # ユーザー名を取得
+            username = stdscr.getstr(2, 3, 20).decode()  # ユーザー名を取得
             curses.noecho()  # 入力表示を終了
 
-            # 改行してから、ルーム名の入力プロンプト表示
+            # password
             stdscr.addstr(3, 0, "Enter your password: ")
             stdscr.refresh()
             stdscr.addstr(4, 0, "> ")  # 次の行で入力を促す
             stdscr.refresh()
             curses.echo()  # 入力内容を表示
-            password = stdscr.getstr(3, 3, 20).decode()  # ルーム名を取得
+            password = stdscr.getstr(4, 3, 20).decode()  # パスワード
+            curses.noecho()  # 入力表示を終了
 
             # ユーザー名をサーバーデータベースで検索
-            search_user = {"user_id": username, "password": password}
+            search_user = {"username": username, "password": password}
             result = send_request("login", search_user, client_socket)
             if result["status"] == "success":
                 session_id = result["session_id"]
                 break
             else:
                 stdscr.addstr(5, 0, "Login failed. Please try again.")
-                stdscr.addstr(6, 0, "")
+                stdscr.addstr(6, 0, "Continue? y:n")
+                stdscr.addstr(7, 0, "> ")
 
-    # elif ILoginOLogon == "o":
+                stdscr.refresh()
+                curses.echo()  # 入力内容を表示
+                Continue = stdscr.getstr(7, 3, 1).decode()
+                curses.noecho()  # 入力表示を終了
+
+                if Continue == "y":  # 続ける場合
+                    stdscr.clear()
+                else:  # 終了
+                    sys.exit()
+        else:
+            # elif ILoginOLogon == "o":
+            # ユーザー名の入力プロンプト表示
+            stdscr.addstr(0, 0, "LOG ON")
+            stdscr.addstr(1, 0, "Enter your username: ")
+            stdscr.refresh()
+            stdscr.addstr(2, 0, "> ")  # 改行して次の行で入力を促す
+            stdscr.refresh()
+            curses.echo()  # 入力内容を表示
+            username = stdscr.getstr(2, 3, 20).decode()  # ユーザー名を取得
+            curses.noecho()  # 入力表示を終了
+
+            stdscr.addstr(3, 0, "Enter your password: ")
+            stdscr.refresh()
+            stdscr.addstr(4, 0, "> ")  # 次の行で入力を促す
+            stdscr.refresh()
+            curses.echo()  # 入力内容を表示
+            password = stdscr.getstr(4, 3, 20).decode()  # ルーム名を取得
+
+            # ユーザーを追加し、そのままログイン
+            user_data = {"username": username, "password": password}
+            send_request("add_user", user_data, client_socket)
+            result = send_request("login", user_data, client_socket)
+            if result["status"] == "success":
+                session_id = result["session_id"]
+                break
+            else:
+                stdscr.addstr(5, 0, "Login failed. Please try again.")
+                stdscr.addstr(6, 0, "Continue? y:n")
+                stdscr.addstr(7, 0, ">")
+                stdscr.refresh()
+                curses.echo()  # 入力内容を表示
+                Continue = stdscr.getstr(7, 1, 1).decode()
+                if Continue == "y":  # 続ける場合
+                    stdscr.clear()
+                else:  # 終了
+                    sys.exit()
+
+        stdscr.clear()
 
     curses.noecho()  # 入力表示を終了
 
@@ -181,6 +234,7 @@ def start_client(stdscr):
 
             # メッセージをリストに追加
             messages.append(f"You: {msg_content}")
+            send_request("add")
 
             # サーバーに送信
             try:
