@@ -53,7 +53,7 @@ class ChatClient:
 
 # Verification Code
 if __name__ == "__main__":
-    username = "test_user"
+    username = "test_user3"
     password = "test_password"
 
     # クライアントインスタンスを作成
@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     # 3. Create Room
     print("Creating chat room...")
-    room_name = "Test Room"
+    room_name = "Test Room2"
     create_room_response = client.send_request("create_room", {"session_id": session_id, "room_name": room_name})
     print(f"Response: {create_room_response}")
 
