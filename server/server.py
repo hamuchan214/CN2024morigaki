@@ -121,10 +121,6 @@ class ChatServer:
                 except (BrokenPipeError, ConnectionResetError) as e:
                     self.logger.error(f"Error sending data to client: {e}")
                     client.close()
-                    
-                if action == 'join_room':
-                    room_id = request.get('room_id')
-                    self.add_client_to_room(room_id, client)
 
                 # メッセージが送信された場合、そのメッセージを全クライアントに送信
                 if action == 'add_message':
@@ -136,7 +132,7 @@ class ChatServer:
                         'user_id': request.get('user_id')
                     })
                     await self.broadcast_to_room(room_id,message_data, loop)
-                    self.logger.info(f"Broadcasted message: {message_data}")
+                    self.logger.debug(f"Broadcasted message to room: {room_id}")
                 
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
@@ -212,6 +208,60 @@ class ChatServer:
                 return {"status": "success", "room_id": create_room_result["room_id"]}
             else:
                 return {"status": "error", "message": create_room_result["message"]}
+            
+        elif action == 'join_room':
+            session_id = request.get('session_id')
+            room_name = request.get('room_name')
+
+            user_id = self.validate_session(session_id)
+            if not user_id:
+                return {"status": "error", "message": "Invalid or expired session"}
+
+            # ルーム名からルームIDを取得
+            room_id_result = await self.db.get_room_id_by_name(room_name)
+            if room_id_result["status"] != "success":
+                return {"status": "error", "message": "Room not found"}
+
+            room_id = room_id_result["room_id"]
+
+            # ユーザーをルームに追加
+            join_result = await self.db.add_user_to_room(user_id, room_id)
+            self.logger.debug(f"join_room: {join_result}")
+            if join_result["status"] == "success":
+                self.logger.info(f"User {user_id} joined room {room_name} (ID: {room_id})")
+                return {"status": "success"}
+            else:
+                return {"status": "error", "message": join_result["message"]}
+
+        elif action == 'leave_room':
+            session_id = request.get('session_id')
+            room_id = request.get('room_id')
+
+            user_id = self.validate_session(session_id)
+            if not user_id:
+                return {"status": "error", "message": "Invalid or expired session"}
+
+            leave_result = await self.db.remove_user_from_room(user_id, room_id)
+
+            if leave_result["status"] == "success":
+                self.logger.info(f"User {user_id} left room {room_id}")
+                return {"status": "success"}
+            else:
+                return {"status": "error", "message": leave_result["message"]}
+
+        elif action == 'get_users_in_room':
+            room_id = request.get('room_id')
+            users_result = await self.db.get_users_in_room(room_id)
+
+            if users_result["status"] == "success":
+                self.logger.info(f"Retrieved users for room {room_id}")
+                return {"status": "success", "user_ids": users_result["user_ids"]}
+            else:
+                return {"status": "error", "message": users_result["message"]}
+
+        else:
+            return {"status": "error", "message": "Unknown action"}
+
 
     async def broadcast_message(self, message_data, loop):
         for client in self.clients:

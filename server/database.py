@@ -274,3 +274,22 @@ class AsyncDatabase:
             return {"status": "success", "user_ids": user_ids}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+    async def get_room_id_by_name(self, room_name):
+        """
+        Retrieve the room ID for a given room name.
+        """
+        try:
+            query = "SELECT room_id FROM Room WHERE room_name = ?"
+            cursor = self.connection.cursor()
+            cursor.execute(query, (room_name,))
+            result = cursor.fetchone()
+            if result:
+                self.logger.debug(f"Found room ID: {result[0]}")
+                return {"status": "success", "room_id": result[0]}
+            else:
+                self.logger.debug("Room not found")
+                return {"status": "error", "message": "Room not found"}
+        except Exception as e:
+            self.logger.error(f"Error fetching room ID: {str(e)}")
+            return {"status": "error", "message": str(e)}
