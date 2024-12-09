@@ -229,7 +229,7 @@ class ChatServer:
             self.logger.debug(f"join_room: {join_result}")
             if join_result["status"] == "success":
                 self.logger.info(f"User {user_id} joined room {room_name} (ID: {room_id})")
-                return {"status": "success"}
+                return {"status": "success", "room_id": room_id}
             else:
                 return {"status": "error", "message": join_result["message"]}
 
