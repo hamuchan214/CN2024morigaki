@@ -3,7 +3,6 @@ import threading
 import curses
 import json
 import sys
-import time
 import asyncio
 
 # Server configuration
