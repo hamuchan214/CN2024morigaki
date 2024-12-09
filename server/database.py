@@ -1,7 +1,6 @@
 import sqlite3
 import asyncio
 import hashlib
-import uuid
 from logging import getLogger, DEBUG
 import colorlog
 
@@ -105,9 +104,7 @@ class AsyncDatabase:
                 print(f"hashed_password: {hashed_password}")  # Debugging output
 
                 if hashed_password == stored_password:
-                    session_id = str(uuid.uuid4())
-                    print(f"Session created: {session_id}")  # Debugging output
-                    return {"status": "success", "user_id": user_id,"session_id": session_id}
+                    return {"status": "success", "user_id": user_id}
                 else:
                     return {"status": "error", "message": "Invalid username or password"}
             except Exception as e:
@@ -224,5 +221,56 @@ class AsyncDatabase:
             messages = [{"message_id": row[0], "user_id": row[1], "message": row[2], "timestamp": row[3]} for row in cursor.fetchall()]
             cursor.close()
             return {"status": "success", "messages": messages}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+        
+    async def add_user_to_room(self, user_id, room_id):
+        """Add a user to a specific room."""
+        query = """
+            INSERT OR IGNORE INTO RoomUser (user_id, room_id, last_read_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP);
+        """
+        params = (user_id, room_id)
+
+        def execute_and_return_status():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, params)
+                self.connection.commit()
+                cursor.close()
+                return {"status": "success"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_status)
+
+    async def remove_user_from_room(self, user_id, room_id):
+        """Remove a user from a specific room."""
+        query = "DELETE FROM RoomUser WHERE user_id = ? AND room_id = ?"
+        params = (user_id, room_id)
+
+        def execute_and_return_status():
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query, params)
+                self.connection.commit()
+                cursor.close()
+                return {"status": "success"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_status)
+
+    async def get_users_in_room(self, room_id):
+        """Retrieve all users in a specific room."""
+        query = """
+            SELECT user_id FROM RoomUser WHERE room_id = ?
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query, (room_id,))
+            user_ids = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+            return {"status": "success", "user_ids": user_ids}
         except Exception as e:
             return {"status": "error", "message": str(e)}
