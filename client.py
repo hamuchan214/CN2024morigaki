@@ -9,19 +9,27 @@ import asyncio
 HOST = "127.0.0.1"
 PORT = 6001
 
+room_id = ""
 
-def receive_messages(client_socket, stdscr, messages, room_id):
+
+async def receive_messages(client_socket, stdscr, messages):
     stdscr.scrollok(True)
-    print("recieved")
+    print("start")
     while True:
         try:
-            message = client_socket.recv(1024)
+            # 非同期でソケットのデータを受信
+            print("received")
+            message = await asyncio.get_event_loop().sock_recv(client_socket, 1024)
             if message:
                 try:
                     message = message.decode("utf-8")
                     data = json.loads(message)
-                    if data["room_id"] == room_id:
-                        messages.append(data.get("message", ""))
+                    action = data["action"]
+                    if action == "new_message":
+                        if data["room_id"] == room_id:
+                            messages.append(data.get("message", ""))
+                        else:
+                            print("different room")
                 except json.JSONDecodeError:
                     messages.append("Error: Invalid JSON received")
 
@@ -144,7 +152,6 @@ async def start_client(stdscr):
             if add_result["status"] != "success":
                 stdscr.addstr(5, 0, "The user exists")
             else:
-                time.sleep(0.5)
                 login_result = await send_request("login", user_data, client_socket)
                 if login_result["status"] == "success":
                     session_id = login_result["session_id"]
@@ -186,17 +193,20 @@ async def start_client(stdscr):
             room_id = get_result["room_id"]
         else:
             sys.exit()
+    print("room in")
     messages = []
     max_lines = curses.LINES - 7
     stdscr.refresh()
 
+    client_socket.setblocking(False)
+
     entering_room_msg = f"You entering room {room}"
 
-    threading.Thread(
-        target=receive_messages,
-        args=(client_socket, stdscr, messages, room_id),
-        daemon=True,
-    ).start()
+    # 非同期タスクでメッセージ受信を開始
+    receive_task = asyncio.create_task(
+        receive_messages(client_socket, stdscr, messages)
+    )
+    print("create_task")
 
     try:
         while True:
@@ -229,8 +239,7 @@ async def start_client(stdscr):
                 "room_id": room_id,
                 "message": msg_content,
             }
-            message_result = await send_request("add_message", message, client_socket)
-            print(message_result)
+            await send_request("add_message", message, client_socket)
             stdscr.move(curses.LINES - 2, 5)
             stdscr.clrtoeol()
             stdscr.refresh()
@@ -239,6 +248,8 @@ async def start_client(stdscr):
         stdscr.addstr("\nDisconnected from server.\n")
     finally:
         client_socket.close()
+        receive_task.cancel()  # 非同期タスクをキャンセル
+        await asyncio.gather(receive_task, return_exceptions=True)
 
 
 def main(stdscr):
