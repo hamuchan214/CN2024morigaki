@@ -125,13 +125,16 @@ class ChatServer:
                 # メッセージが送信された場合、そのメッセージを全クライアントに送信
                 if action == 'add_message':
                     room_id = request.get('room_id')
+                    session_id = request.get('session_id')
+                    user_id = self.validate_session(session_id)
+                    user_name = await self.db.get_username_by_user_id(user_id)
                     message_data = json.dumps({
                         'action': 'new_message',
                         'message': request.get('message'),
                         'room_id': request.get('room_id'),
-                        'user_id': request.get('user_id')
+                        'user_name': user_name
                     })
-                    await self.broadcast_to_room(room_id,message_data, loop)
+                    await self.broadcast_message(message_data, loop)
                     self.logger.debug(f"Broadcasted message to room: {room_id}")
                     self.logger.debug(f"Broadcasted message: {message_data}")
                 
