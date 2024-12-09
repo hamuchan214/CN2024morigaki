@@ -133,6 +133,7 @@ class ChatServer:
                     })
                     await self.broadcast_to_room(room_id,message_data, loop)
                     self.logger.debug(f"Broadcasted message to room: {room_id}")
+                    self.logger.debug(f"Broadcasted message: {message_data}")
                 
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
@@ -229,7 +230,7 @@ class ChatServer:
             self.logger.debug(f"join_room: {join_result}")
             if join_result["status"] == "success":
                 self.logger.info(f"User {user_id} joined room {room_name} (ID: {room_id})")
-                return {"status": "success"}
+                return {"status": "success", "room_id": room_id}
             else:
                 return {"status": "error", "message": join_result["message"]}
 
