@@ -312,6 +312,7 @@ class AsyncDatabase:
             cursor = self.connection.cursor()
             cursor.execute(query, (room_name,))
             result = cursor.fetchone()
+            cursor.close()
             if result:
                 self.logger.debug(f"Found room ID: {result[0]}")
                 return {"status": "success", "room_id": result[0]}
@@ -320,4 +321,22 @@ class AsyncDatabase:
                 return {"status": "error", "message": "Room not found"}
         except Exception as e:
             self.logger.error(f"Error fetching room ID: {str(e)}")
+            return {"status": "error", "message": str(e)}
+
+    async def get_username_by_user_id(self, user_id):
+        """Fetch the username by user ID."""
+        query = "SELECT username FROM User WHERE user_id = ?"
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query, (user_id,))
+            result = cursor.fetchone()
+            cursor.close()
+            self.logger.debug(f"Found username: {result}")
+            if result:
+                username = result[0]
+                return {"status": "success", "username": username}
+            else:
+                username = None
+                return {"status": "success", "username": username}
+        except Exception as e:
             return {"status": "error", "message": str(e)}

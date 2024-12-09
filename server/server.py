@@ -142,6 +142,24 @@ class ChatServer:
                     self.logger.error(f"Error handling client request: {e}")
                     break  # エラー発生時に接続を終了
 
+                # メッセージが送信された場合、そのメッセージを全クライアントに送信
+                if action == "add_message":
+                    room_id = request.get("room_id")
+                    session_id = request.get("session_id")
+                    user_id = self.validate_session(session_id)
+                    user_name = await self.db.get_username_by_user_id(user_id)
+                    message_data = json.dumps(
+                        {
+                            "action": "new_message",
+                            "message": request.get("message"),
+                            "room_id": request.get("room_id"),
+                            "user_name": user_name,
+                        }
+                    )
+                    await self.broadcast_message(message_data, loop)
+                    self.logger.debug(f"Broadcasted message to room: {room_id}")
+                    self.logger.debug(f"Broadcasted message: {message_data}")
+
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
         finally:

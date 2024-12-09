@@ -33,7 +33,7 @@ class ChatClient:
     def display_new_message(self, response):
         """Display a new message received from the server."""
         print(
-            f"New message received in room {response['room_id']}: {response['message']}"
+            f"New message received in room {response['room_id']}: {response['message']}: {response['user_name']}"
         )
 
     def listen_for_messages(self):
