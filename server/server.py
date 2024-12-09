@@ -133,6 +133,7 @@ class ChatServer:
                     })
                     await self.broadcast_to_room(room_id,message_data, loop)
                     self.logger.debug(f"Broadcasted message to room: {room_id}")
+                    self.logger.debug(f"Broadcasted message: {message_data}")
                 
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
