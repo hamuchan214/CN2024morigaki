@@ -105,42 +105,47 @@ class ChatServer:
         try:
             # クライアントからの接続を永続的に待機
             while True:
-                data = await loop.sock_recv(client, 1024)
-                if not data:
-                    break  # クライアントが切断した場合に終了
-                request = json.loads(data.decode())
-                self.logger.debug(f"Received request: {request}")
-
-                action = request.get("action")
-                response = await self.route_request(action, request)
-
-                # クライアントへのレスポンス送信
                 try:
-                    await loop.sock_sendall(client, json.dumps(response).encode())
-                except (BrokenPipeError, ConnectionResetError) as e:
-                    self.logger.error(f"Error sending data to client: {e}")
-                    client.close()
+                    data = await loop.sock_recv(client, 1024)
+                    if not data:
+                        break  # クライアントが切断した場合に終了
 
-                # メッセージが送信された場合、そのメッセージを全クライアントに送信
-                if action == "add_message":
-                    room_id = request.get("room_id")
-                    message_data = json.dumps(
-                        {
-                            "action": "new_message",
-                            "message": request.get("message"),
-                            "room_id": request.get("room_id"),
-                            "user_id": request.get("user_id"),
-                        }
-                    )
-                    await self.broadcast_to_room(room_id, message_data, loop)
-                    self.logger.debug(f"Broadcasted message to room: {room_id}")
-                    self.logger.debug(f"Broadcasted message: {message_data}")
+                    request = json.loads(data.decode())
+                    self.logger.debug(f"Received request: {request}")
+
+                    action = request.get("action")
+                    response = await self.route_request(action, request)
+
+                    # クライアントへのレスポンス送信
+                    try:
+                        await loop.sock_sendall(client, json.dumps(response).encode())
+                    except (BrokenPipeError, ConnectionResetError) as e:
+                        self.logger.error(f"Error sending data to client: {e}")
+                        break  # クライアントが切断されている場合は処理を終了
+
+                    # メッセージが送信された場合、そのメッセージを全クライアントに送信
+                    if action == "add_message":
+                        room_id = request.get("room_id")
+                        message_data = json.dumps(
+                            {
+                                "action": "new_message",
+                                "message": request.get("message"),
+                                "room_id": request.get("room_id"),
+                                "user_id": request.get("user_id"),
+                            }
+                        )
+                        await self.broadcast_to_room(room_id, message_data, loop)
+                        self.logger.debug(f"Broadcasted message to room: {room_id}")
+                        self.logger.debug(f"Broadcasted message: {message_data}")
+
+                except Exception as e:
+                    self.logger.error(f"Error handling client request: {e}")
+                    break  # エラー発生時に接続を終了
 
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
-
-            # クライアント切断時にリストから削除
         finally:
+            # クライアントが切断された場合にリストから削除
             if client in self.clients:
                 self.clients.remove(client)
             client.close()
@@ -197,7 +202,7 @@ class ChatServer:
             if not user_id:
                 return {"status": "error", "message": "Invalid or expired session"}
 
-            save_result = await self.db.save_message(user_id, room_id, message)
+            save_result = await self.db.save_message_async(user_id, room_id, message)
 
             if save_result["status"] == "success":
                 self.logger.info(f"Message saved with ID: {save_result['message_id']}")
@@ -214,7 +219,7 @@ class ChatServer:
             if not user_id:
                 return {"status": "error", "message": "Invalid or expired session"}
 
-            create_room_result = await self.db.create_room(room_name)
+            create_room_result = await self.db.create_room_async(room_name)
 
             if create_room_result["status"] == "success":
                 self.logger.info(

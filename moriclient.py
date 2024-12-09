@@ -179,9 +179,7 @@ async def start_client(stdscr):
         room_id = room_result["room_id"]
         print(f"Room ID: {room_id}")
     else:
-        get_result = await send_request(
-            "get_room_by_name", {"room_name": room}, client_socket
-        )
+        get_result = await send_request("join_room", {"room_name": room}, client_socket)
         print(get_result)
         if get_result["status"] == "success":
             room_id = get_result["room_id"]

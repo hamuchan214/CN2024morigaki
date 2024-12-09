@@ -24,85 +24,65 @@ class AsyncDatabase:
     def __init__(self, db_name):
         self.db_name = db_name
         self.connection = sqlite3.connect(db_name, check_same_thread=False)
-        self.connection.row_factory = sqlite3.Row
+        self.connection.row_factory = sqlite3.Row  # Allows accessing columns by name
         self.logger = setup_logger()
 
-    async def execute_query(self, query, params=None):
-        """非同期的にクエリを実行します"""
+    async def execute_async(self, query, params=None):
+        """Execute a query asynchronously using cursor."""
         loop = asyncio.get_running_loop()
 
-        def execute():
+        def execute_query():
             try:
                 cursor = self.connection.cursor()
                 cursor.execute(query, params or ())
                 self.connection.commit()
-                return {"status": "success", "data": cursor.fetchall()}
+                cursor.close()
+                return {"status": "success"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
-            finally:
-                cursor.close()
 
-        return await loop.run_in_executor(None, execute)
+        # Run the database operation asynchronously
+        return await loop.run_in_executor(None, execute_query)
 
     async def setup_database(self):
-        """データベースのテーブルを初期化します"""
+        """Initialize database schema."""
         queries = [
-            """CREATE TABLE IF NOT EXISTS user (
+            """CREATE TABLE IF NOT EXISTS User (
                 user_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
                 password TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );""",
-            """CREATE TABLE IF NOT EXISTS room (
+            """CREATE TABLE IF NOT EXISTS Room (
                 room_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 room_name TEXT NOT NULL UNIQUE,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );""",
-            """CREATE TABLE IF NOT EXISTS message (
+            """CREATE TABLE IF NOT EXISTS Message (
                 message_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 room_id INTEGER NOT NULL,
                 message TEXT NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES user(user_id),
-                FOREIGN KEY(room_id) REFERENCES room(room_id)
+                FOREIGN KEY(user_id) REFERENCES User(user_id),
+                FOREIGN KEY(room_id) REFERENCES Room(room_id)
             );""",
-            """CREATE TABLE IF NOT EXISTS room_user (
+            """CREATE TABLE IF NOT EXISTS RoomUser (
                 user_id INTEGER NOT NULL,
                 room_id INTEGER NOT NULL,
                 last_read_at DATETIME,
                 PRIMARY KEY(user_id, room_id),
-                FOREIGN KEY(user_id) REFERENCES user(user_id),
-                FOREIGN KEY(room_id) REFERENCES room(room_id)
+                FOREIGN KEY(user_id) REFERENCES User(user_id),
+                FOREIGN KEY(room_id) REFERENCES Room(room_id)
             );""",
         ]
         for query in queries:
-            result = await self.execute_query(query)
+            result = await self.execute_async(query)
             if result["status"] == "error":
-                self.logger.error(f"Failed to execute query: {query}")
                 return result
-        self.logger.info("Database setup completed.")
         return {"status": "success"}
 
-    async def add_user(self, username, password):
-        """新規ユーザーを追加"""
-        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        query = "INSERT INTO user (username, password) VALUES (?, ?)"
-        result = await self.execute_query(query, (username, hashed_password))
-        if result["status"] == "success":
-            self.logger.info(f"User added: {username}")
-        else:
-            self.logger.error(f"Failed to add user: {username} - {result['message']}")
-        return result
-
     async def login(self, username, password):
-        """ユーザーのログインを処理"""
-        query = "SELECT user_id, password FROM user WHERE username = ?"
-        result = await self.execute_query(query, (username,))
-        if result["status"] == "error" or not result["data"]:
-            return {"status": "error", "message": "Invalid username or password"}
-
-        row = result["data"][0]
         """Login a user asynchronously."""
         query = "SELECT user_id, password FROM User WHERE username = ?"
 

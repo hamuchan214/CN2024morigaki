@@ -12,7 +12,7 @@ PORT = 6001
 
 def receive_messages(client_socket, stdscr, messages, room_id):
     stdscr.scrollok(True)
-
+    print("recieved")
     while True:
         try:
             message = client_socket.recv(1024)
