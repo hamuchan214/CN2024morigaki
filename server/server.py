@@ -127,7 +127,9 @@ class ChatServer:
                     room_id = request.get('room_id')
                     session_id = request.get('session_id')
                     user_id = self.validate_session(session_id)
-                    user_name = await self.db.get_username_by_user_id(user_id)
+                    user_name_result = await self.db.get_username_by_user_id(user_id)
+                    user_name = user_name_result.get('username')
+                    self.logger.info(f"User name: {user_name}")
                     message_data = json.dumps({
                         'action': 'new_message',
                         'message': request.get('message'),

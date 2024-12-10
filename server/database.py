@@ -96,10 +96,8 @@ class AsyncDatabase:
                     return {"status": "error", "message": "Invalid username or password"} 
                 
                 user_id, stored_password = row
-                print(f"user_id: {user_id}, stored_password: {stored_password}")  # Debugging output
 
                 hashed_password = hashlib.sha256(password.encode()).hexdigest()
-                print(f"hashed_password: {hashed_password}")  # Debugging output
 
                 if hashed_password == stored_password:
                     return {"status": "success", "user_id": user_id}
@@ -125,7 +123,7 @@ class AsyncDatabase:
                 self.connection.commit()
                 user_id = cursor.lastrowid  # Fetch the last inserted row ID
                 cursor.close()
-                self.logger.info(f"New user added with ID: {user_id}")
+                self.logger.info(f"New user {username} added with ID: {user_id}")
                 return {"status": "success", "user_id": user_id}
             except sqlite3.IntegrityError:
                 self.logger.error(f"Username: {username} already exists")
