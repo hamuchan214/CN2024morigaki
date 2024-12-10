@@ -2,19 +2,19 @@ import asyncio
 import json
 import time
 from database import AsyncDatabase
-from logging import getLogger, DEBUG
+from logging import getLogger, DEBUG, INFO
 import colorlog
 from utils import generate_session_id
 import socket
 
 # colorlog用の設定
-LOG_FORMAT = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-LOG_LEVEL = DEBUG
 LOG_DATE_FORMAT = "%H:%M:%S"
+LOG_FORMAT = "%(log_color)s[%(asctime)s:%(levelname)s-%(name)s] %(message)s"
+LOG_LEVEL = INFO
 
 def setup_logger():
     handler = colorlog.StreamHandler()
-    formatter = colorlog.ColoredFormatter(LOG_FORMAT)
+    formatter = colorlog.ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     handler.setFormatter(formatter)
     
     logger = getLogger(__name__)
@@ -60,7 +60,7 @@ class ChatServer:
             else:
                 # セッションが期限切れなら削除
                 del self.sessions[session_id]
-                self.logger.debug(f"Session expired: {session}")
+                self.logger.error(f"Session expired: {session}")
         return None
 
     def add_client_to_room(self, room_id, client):
@@ -194,6 +194,7 @@ class ChatServer:
                 self.logger.info(f"Message saved with ID: {save_result['message_id']}")
                 return {"status": "success", "message_id": save_result["message_id"]}
             else:
+                self.logger.error(f"Error saving message: {save_result['message']}")
                 return {"status": "error", "message": save_result["message"]}
 
         elif action == 'create_room':
@@ -211,6 +212,7 @@ class ChatServer:
                 self.logger.info(f"Room created with ID: {create_room_result['room_id']}")
                 return {"status": "success", "room_id": create_room_result["room_id"]}
             else:
+                self.logger.error(f"Error creating room: {create_room_result['message']}")
                 return {"status": "error", "message": create_room_result["message"]}
             
         elif action == 'join_room':
@@ -235,6 +237,7 @@ class ChatServer:
                 self.logger.info(f"User {user_id} joined room {room_name} (ID: {room_id})")
                 return {"status": "success", "room_id": room_id}
             else:
+                self.logger.error(f"Error joining room: {join_result['message']}")
                 return {"status": "error", "message": join_result["message"]}
 
         elif action == 'leave_room':
