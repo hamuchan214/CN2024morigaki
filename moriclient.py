@@ -3,6 +3,7 @@ import threading
 import curses
 import json
 import sys
+import time
 import asyncio
 
 # Server configuration
@@ -10,33 +11,23 @@ HOST = "127.0.0.1"
 PORT = 6001
 
 
-def receive_messages(client_socket, stdscr, messages, room_id, entering_room_msg):
+def receive_messages(client_socket, stdscr, messages, room_id):
     stdscr.scrollok(True)
 
     while True:
         try:
-            print("loop")
-            message = client_socket.recv(4096)
-            print("recieved")
+            message = client_socket.recv(1024)
             if message:
                 try:
                     message = message.decode("utf-8")
                     data = json.loads(message)
-                    print(data)
-                    if "action" in data.keys():
-                        print(data.get("room_id"))
-                        print(room_id)
-
-                        if data.get("room_id") == room_id:
-                            print(data.get("message"))
-                            messages.append(
-                                data.get("user_name") + ": " + data.get("message")
-                            )
+                    if data["room_id"] == room_id:
+                        messages.append(data.get("message", ""))
                 except json.JSONDecodeError:
                     messages.append("Error: Invalid JSON received")
 
                 stdscr.clear()
-                stdscr.addstr(4, 0, entering_room_msg)
+
                 max_display_lines = curses.LINES - 7
                 start_idx = max(0, len(messages) - max_display_lines)
                 displayed_messages = messages[start_idx:]
@@ -154,6 +145,7 @@ async def start_client(stdscr):
             if add_result["status"] != "success":
                 stdscr.addstr(5, 0, "The user exists")
             else:
+                time.sleep(0.5)
                 login_result = await send_request("login", user_data, client_socket)
                 if login_result["status"] == "success":
                     session_id = login_result["session_id"]
@@ -187,23 +179,21 @@ async def start_client(stdscr):
         room_id = room_result["room_id"]
         print(f"Room ID: {room_id}")
     else:
-        join_result = await send_request("join_room", create_room_data, client_socket)
-        if join_result["status"] == "success":
-            room_id = join_result["room_id"]
+        get_result = await send_request("join_room", {"room_name": room}, client_socket)
+        print(get_result)
+        if get_result["status"] == "success":
+            room_id = get_result["room_id"]
         else:
-            print("Failed to create room. Exiting...")
-            exit()
-    # メッセージ表示領域の管理
-    messages = []  # メッセージを保持するリスト
-    max_lines = curses.LINES - 7  # "You:"の2行上までメッセージを表示
+            sys.exit()
+    messages = []
+    max_lines = curses.LINES - 7
     stdscr.refresh()
 
     entering_room_msg = f"You entering room {room}"
 
-    # メッセージ受信用のスレッドを開始
     threading.Thread(
         target=receive_messages,
-        args=(client_socket, stdscr, messages, room_id, entering_room_msg),
+        args=(client_socket, stdscr, messages, room_id),
         daemon=True,
     ).start()
 
@@ -239,6 +229,7 @@ async def start_client(stdscr):
                 "message": msg_content,
             }
             message_result = await send_request("add_message", message, client_socket)
+            print(message_result)
             stdscr.move(curses.LINES - 2, 5)
             stdscr.clrtoeol()
             stdscr.refresh()

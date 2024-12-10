@@ -3,8 +3,9 @@ import json
 import threading
 import sys
 
+
 class ChatClient:
-    def __init__(self, host='127.0.0.1', port=6001):
+    def __init__(self, host="127.0.0.1", port=6001):
         """Initialize the chat client."""
         self.host = host
         self.port = port
@@ -16,7 +17,9 @@ class ChatClient:
         """Send a request to the chat server."""
         try:
             request = {"action": action, **data}
-            self.client_socket.sendall(json.dumps(request).encode())  # Send request to the server
+            self.client_socket.sendall(
+                json.dumps(request).encode()
+            )  # Send request to the server
 
             response_data = self.client_socket.recv(1024)  # Receive response
             response = json.loads(response_data.decode())
@@ -29,7 +32,9 @@ class ChatClient:
 
     def display_new_message(self, response):
         """Display a new message received from the server."""
-        print(f"New message received in room {response['room_id']}: {response['message']}: {response['user_name']}")
+        print(
+            f"New message received in room {response['room_id']}: {response['message']}: {response['user_name']}"
+        )
 
     def listen_for_messages(self):
         """Continuously listen for new messages from the server."""
@@ -55,7 +60,9 @@ class ChatClient:
 
     def join_room(self, session_id, room_name):
         """Join a chat room by its name."""
-        response = self.send_request("join_room", {"session_id": session_id, "room_name": room_name})
+        response = self.send_request(
+            "join_room", {"session_id": session_id, "room_name": room_name}
+        )
         if response["status"] == "success":
             print(f"Successfully joined room: {room_name}")
             return True
@@ -75,7 +82,9 @@ if __name__ == "__main__":
 
         # 1. Add User
         print("Adding user...")
-        add_user_response = client.send_request("add_user", {"username": username, "password": password})
+        add_user_response = client.send_request(
+            "add_user", {"username": username, "password": password}
+        )
         print(f"Response: {add_user_response}")
 
         if add_user_response["status"] != "success":
@@ -85,7 +94,9 @@ if __name__ == "__main__":
 
         # 2. Login User
         print("Logging in user...")
-        login_response = client.send_request("login", {"username": username, "password": password})
+        login_response = client.send_request(
+            "login", {"username": username, "password": password}
+        )
         print(f"Response: {login_response}")
 
         if login_response["status"] == "success":
@@ -99,7 +110,9 @@ if __name__ == "__main__":
         # 3. Create Room
         print("Creating chat room...")
         room_name = "Test Room"
-        create_room_response = client.send_request("create_room", {"session_id": session_id, "room_name": room_name})
+        create_room_response = client.send_request(
+            "create_room", {"session_id": session_id, "room_name": room_name}
+        )
         print(f"Response: {create_room_response}")
 
         if create_room_response["status"] == "success":
@@ -110,8 +123,8 @@ if __name__ == "__main__":
             client.close()
             sys.exit()
 
-        #4. Join Room
-        join_room_response = client.join_room(session_id,room_name)
+        # 4. Join Room
+        join_room_response = client.join_room(session_id, room_name)
         if not join_room_response:
             print("Failed to join room. Exiting...")
             client.close()
@@ -122,7 +135,7 @@ if __name__ == "__main__":
         message_content = "Hello, this is a test message."
         add_message_response = client.send_request(
             "add_message",
-            {"session_id": session_id, "room_id": room_id, "message": message_content}
+            {"session_id": session_id, "room_id": room_id, "message": message_content},
         )
         print(f"Response: {add_message_response}")
 
@@ -130,17 +143,22 @@ if __name__ == "__main__":
             print("Failed to send message. Exiting...")
             client.close()
             sys.exit()
-            
 
         # Start listening for new messages after sending the message
         print("Waiting for new messages...")
         message_listener_thread = threading.Thread(target=client.listen_for_messages)
-        message_listener_thread.daemon = True  # Allow the thread to exit when the main program exits
+        message_listener_thread.daemon = (
+            True  # Allow the thread to exit when the main program exits
+        )
         message_listener_thread.start()
 
         # Allow the user to type commands or exit the application
         while True:
-            user_input = input("Enter 'exit' to quit or 'send' to send another message: ").strip().lower()
+            user_input = (
+                input("Enter 'exit' to quit or 'send' to send another message: ")
+                .strip()
+                .lower()
+            )
             if user_input == "exit":
                 print("Exiting...")
                 client.close()
@@ -149,7 +167,11 @@ if __name__ == "__main__":
                 new_message = input("Enter your message: ")
                 response = client.send_request(
                     "add_message",
-                    {"session_id": session_id, "room_id": room_id, "message": new_message}
+                    {
+                        "session_id": session_id,
+                        "room_id": room_id,
+                        "message": new_message,
+                    },
                 )
                 print(f"Response: {response}")
 

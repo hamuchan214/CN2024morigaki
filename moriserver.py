@@ -2,19 +2,20 @@ import asyncio
 import json
 import time
 from database import AsyncDatabase
-from logging import getLogger, DEBUG, INFO
+from logging import getLogger, DEBUG
 import colorlog
 from utils import generate_session_id
 import socket
 
 # colorlog用の設定
+LOG_FORMAT = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_LEVEL = DEBUG
 LOG_DATE_FORMAT = "%H:%M:%S"
-LOG_FORMAT = "%(log_color)s[%(asctime)s:%(levelname)s-%(name)s] %(message)s"
-LOG_LEVEL = INFO
+
 
 def setup_logger():
     handler = colorlog.StreamHandler()
-    formatter = colorlog.ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+    formatter = colorlog.ColoredFormatter(LOG_FORMAT)
     handler.setFormatter(formatter)
 
     logger = getLogger(__name__)
@@ -28,16 +29,16 @@ class ChatServer:
         self.host = host
         self.port = port
         self.db = AsyncDatabase("chat.db")
+        self.db.server = self  # todo: database.pyに処理がまたがっているので修正する
         self.sessions = {}
         self.clients = []  # 接続中のクライアントを管理するリスト
-        self.room_clients = {}
         self.logger = setup_logger()
 
     # セッションを作成
     def create_session(self, user_id):
         session_id = generate_session_id(user_id)
         exception_time = time.time() + 3600
-        self.sessions[session_id] = {"user_id": user_id, "exception_at": exception_time}
+        self.sessions[session_id] = (user_id, exception_time)
         self.logger.debug(f"Session created: {self.sessions}")
         return session_id
 
@@ -49,33 +50,13 @@ class ChatServer:
         return: セッションが有効ならユーザーIDを返し、無効なら None を返す
         """
         session = self.sessions.get(session_id)
-        self.logger.debug(f"Validating session: {session_id}")
         if session:
-            # セッションが有効期限内かをチェック
-            if time.time() < session["exception_at"]:
-                self.logger.debug(f"Session validated: {session}")
-                return session["user_id"]
+            user_id, exception_time = session
+            if time.time() < exception_time:
+                return user_id
             else:
-                # セッションが期限切れなら削除
                 del self.sessions[session_id]
-                self.logger.error(f"Session expired: {session}")
         return None
-
-    def add_client_to_room(self, room_id, client):
-        if room_id not in self.room_clients:
-            self.room_clients[room_id] = []
-        if client not in self.room_clients[room_id]:
-            self.room_clients[room_id].append(client)
-            self.logger.debug(f"Added client to room: {room_id}")
-
-    def remove_client_from_room(self, room_id, client):
-        if room_id in self.room_clients and client in self.room_clients[room_id]:
-            self.room_clients[room_id].remove(client)
-            self.logger.debug(f"Removed client from room: {room_id}")
-
-            # ルームが空になったら削除
-            if not self.room_clients[room_id]:
-                del self.room_clients[room_id]
 
     async def start(self):
         """Start the server."""
@@ -83,15 +64,13 @@ class ChatServer:
         if setup_result["status"] == "error":
             self.logger.info(f"Database setup failed: {setup_result['message']}")
             return
-        self.logger.info("Database setup completed successfully.")
+        self.logger.warning("Database setup completed successfully.")
 
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setblocking(False)
         server.bind((self.host, self.port))
         server.listen(5)
-
         loop = asyncio.get_event_loop()
-        self.logger.info(f"Chat server started on {self.host}:{self.port}")
         while True:
             client, address = await loop.sock_accept(server)
             self.logger.info(f"Accepted new client connection: {address}")
@@ -122,35 +101,32 @@ class ChatServer:
 
                 # メッセージが送信された場合、そのメッセージを全クライアントに送信
                 if action == "add_message":
-                    room_id = request.get("room_id")
-                    session_id = request.get("session_id")
-                    user_id = self.validate_session(session_id)
-                    user_name_result = await self.db.get_username_by_user_id(user_id)
-
-                    user_name = user_name_result.get("username")
-                    self.logger.info(f"User name: {user_name}")
                     message_data = json.dumps(
                         {
                             "action": "new_message",
                             "message": request.get("message"),
                             "room_id": request.get("room_id"),
-                            "user_name": user_name,
+                            "user_id": request.get("user_id"),
                         }
                     )
-
                     await self.broadcast_message(message_data, loop)
-                    self.logger.debug(f"Broadcasted message to room: {room_id}")
-                    self.logger.debug(f"Broadcasted message: {message_data}")
+                    self.logger.info(f"Broadcasted message: {message_data}")
 
         except Exception as e:
             self.logger.error(f"Error handling client: {e}")
+            response = {"status": "error", "message": str(e)}
+            await loop.sock_sendall(client, json.dumps(response).encode())
 
-            # クライアント切断時にリストから削除
         finally:
-            if client in self.clients:
-                self.clients.remove(client)
+            # クライアント切断時にリストから削除
+            try:
+                if client in self.clients:
+                    self.clients.remove(client)
+                    self.logger.info(f"Disconnected client: {client}")
+            except ValueError:
+                self.logger.warning(f"Client {client} was not in the client list.")
             client.close()
-            self.logger.info("Client disconnected.")
+            self.logger.info(f"Client connection closed: {client}")
 
     async def route_request(self, action, request):
         """Route client actions to the appropriate database methods."""
@@ -181,6 +157,19 @@ class ChatServer:
             room_id = request.get("room_id")
             return await self.db.get_messages_by_room(room_id)
 
+        elif action == "get_room_by_name":
+            room_name = request.get("room_name")
+            self.logger.debug(f"Fetching room by name: {room_name}")
+            try:
+                room_result = await self.db.get_room_id_by_name(room_name)
+                if room_result["status"] == "success":
+                    return {"status": "success", "room_id": room_result["room_id"]}
+                else:
+                    return room_result
+            except Exception as e:
+                self.logger.error(f"Error fetching room: {e}")
+                return {"status": "error", "message": str(e)}
+
         elif action == "add_message":
             session_id = request.get("session_id")
             room_id = request.get("room_id")
@@ -190,25 +179,23 @@ class ChatServer:
             if not user_id:
                 return {"status": "error", "message": "Invalid or expired session"}
 
-            save_result = await self.db.save_message_async(user_id, room_id, message)
+            save_result = await self.db.save_message(user_id, room_id, message)
 
             if save_result["status"] == "success":
                 self.logger.info(f"Message saved with ID: {save_result['message_id']}")
                 return {"status": "success", "message_id": save_result["message_id"]}
             else:
-                self.logger.error(f"Error saving message: {save_result['message']}")
                 return {"status": "error", "message": save_result["message"]}
 
         elif action == "create_room":
             session_id = request.get("session_id")
             room_name = request.get("room_name")
 
-            # 修正: セッションを適切に検証
             user_id = self.validate_session(session_id)
             if not user_id:
                 return {"status": "error", "message": "Invalid or expired session"}
 
-            create_room_result = await self.db.create_room_async(room_name)
+            create_room_result = await self.db.create_room(room_name)
 
             if create_room_result["status"] == "success":
                 self.logger.info(
@@ -216,67 +203,10 @@ class ChatServer:
                 )
                 return {"status": "success", "room_id": create_room_result["room_id"]}
             else:
-                self.logger.error(
-                    f"Error creating room: {create_room_result['message']}"
-                )
-
                 return {"status": "error", "message": create_room_result["message"]}
 
-        elif action == "join_room":
-            session_id = request.get("session_id")
-            room_name = request.get("room_name")
-
-            user_id = self.validate_session(session_id)
-            if not user_id:
-                return {"status": "error", "message": "Invalid or expired session"}
-
-            # ルーム名からルームIDを取得
-            room_id_result = await self.db.get_room_id_by_name(room_name)
-            if room_id_result["status"] != "success":
-                return {"status": "error", "message": "Room not found"}
-
-            room_id = room_id_result["room_id"]
-
-            # ユーザーをルームに追加
-            join_result = await self.db.add_user_to_room(user_id, room_id)
-            self.logger.debug(f"join_room: {join_result}")
-            if join_result["status"] == "success":
-                self.logger.info(
-                    f"User {user_id} joined room {room_name} (ID: {room_id})"
-                )
-                return {"status": "success", "room_id": room_id}
-            else:
-                self.logger.error(f"Error joining room: {join_result['message']}")
-                return {"status": "error", "message": join_result["message"]}
-
-        elif action == "leave_room":
-            session_id = request.get("session_id")
-            room_id = request.get("room_id")
-
-            user_id = self.validate_session(session_id)
-            if not user_id:
-                return {"status": "error", "message": "Invalid or expired session"}
-
-            leave_result = await self.db.remove_user_from_room(user_id, room_id)
-
-            if leave_result["status"] == "success":
-                self.logger.info(f"User {user_id} left room {room_id}")
-                return {"status": "success"}
-            else:
-                return {"status": "error", "message": leave_result["message"]}
-
-        elif action == "get_users_in_room":
-            room_id = request.get("room_id")
-            users_result = await self.db.get_users_in_room(room_id)
-
-            if users_result["status"] == "success":
-                self.logger.info(f"Retrieved users for room {room_id}")
-                return {"status": "success", "user_ids": users_result["user_ids"]}
-            else:
-                return {"status": "error", "message": users_result["message"]}
-
         else:
-            return {"status": "error", "message": "Unknown action"}
+            return {"status": "error", "message": "Invalid action"}
 
     async def broadcast_message(self, message_data, loop):
         for client in self.clients:
@@ -285,18 +215,6 @@ class ChatServer:
             except (BrokenPipeError, ConnectionResetError) as e:
                 self.logger.error(f"Error broadcasting message to client: {e}")
                 self.clients.remove(client)
-
-    async def broadcast_to_room(self, room_id, message_data, loop):
-        """Send a message to all clients in a specific room."""
-        if room_id in self.room_clients:
-            for client in self.room_clients[room_id]:
-                try:
-                    await loop.sock_sendall(client, message_data.encode())
-                except (BrokenPipeError, ConnectionResetError) as e:
-                    self.logger.error(
-                        f"Error broadcasting message to client in room {room_id}: {e}"
-                    )
-                    self.remove_client_from_room(client, room_id)
 
 
 if __name__ == "__main__":

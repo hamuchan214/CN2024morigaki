@@ -8,15 +8,17 @@ LOG_DATE_FORMAT = "%H:%M:%S"
 LOG_FORMAT = "%(log_color)s[%(asctime)s:%(levelname)s-%(name)s] %(message)s"
 LOG_LEVEL = INFO
 
+
 def setup_logger():
     handler = colorlog.StreamHandler()
     formatter = colorlog.ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     handler.setFormatter(formatter)
-    
+
     logger = getLogger(__name__)
     logger.addHandler(handler)
     logger.setLevel(LOG_LEVEL)
     return logger
+
 
 class AsyncDatabase:
     def __init__(self, db_name):
@@ -72,7 +74,7 @@ class AsyncDatabase:
                 PRIMARY KEY(user_id, room_id),
                 FOREIGN KEY(user_id) REFERENCES User(user_id),
                 FOREIGN KEY(room_id) REFERENCES Room(room_id)
-            );"""
+            );""",
         ]
         for query in queries:
             result = await self.execute_async(query)
@@ -80,11 +82,10 @@ class AsyncDatabase:
                 return result
         return {"status": "success"}
 
-
     async def login(self, username, password):
         """Login a user asynchronously."""
         query = "SELECT user_id, password FROM User WHERE username = ?"
-        
+
         def authenticate():
             try:
                 cursor = self.connection.cursor()
@@ -93,8 +94,11 @@ class AsyncDatabase:
                 cursor.close()
 
                 if not row:
-                    return {"status": "error", "message": "Invalid username or password"} 
-                
+                    return {
+                        "status": "error",
+                        "message": "Invalid username or password",
+                    }
+
                 user_id, stored_password = row
 
                 hashed_password = hashlib.sha256(password.encode()).hexdigest()
@@ -102,7 +106,10 @@ class AsyncDatabase:
                 if hashed_password == stored_password:
                     return {"status": "success", "user_id": user_id}
                 else:
-                    return {"status": "error", "message": "Invalid username or password"}
+                    return {
+                        "status": "error",
+                        "message": "Invalid username or password",
+                    }
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
@@ -113,7 +120,7 @@ class AsyncDatabase:
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         query = f"INSERT INTO User (username, password) VALUES (?, ?)"
         params = (username, hashed_password)
-        
+
         loop = asyncio.get_running_loop()
 
         def execute_and_fetch_lastrowid():
@@ -169,7 +176,9 @@ class AsyncDatabase:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
-        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_message_id)
+        return await asyncio.get_running_loop().run_in_executor(
+            None, execute_and_return_message_id
+        )
 
     async def get_rooms_by_user(self, user_id):
         """Get a list of rooms the user belongs to."""
@@ -182,7 +191,10 @@ class AsyncDatabase:
             cursor.execute(query, (user_id,))
             rooms = cursor.fetchall()
             cursor.close()
-            room_list = [{"room_id": room[0], "room_name": room[1], "created_at": room[2]} for room in rooms]
+            room_list = [
+                {"room_id": room[0], "room_name": room[1], "created_at": room[2]}
+                for room in rooms
+            ]
             return {"status": "success", "rooms": room_list}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -205,21 +217,31 @@ class AsyncDatabase:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
-        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_room_id)
+        return await asyncio.get_running_loop().run_in_executor(
+            None, execute_and_return_room_id
+        )
 
     async def get_messages_by_room(self, room_id):
         """Retrieve all messages for a specific room asynchronously."""
         query = "SELECT message_id, user_id, message, timestamp FROM Message WHERE room_id = ? ORDER BY timestamp ASC"
-        
+
         try:
             cursor = self.connection.cursor()
             cursor.execute(query, (room_id,))
-            messages = [{"message_id": row[0], "user_id": row[1], "message": row[2], "timestamp": row[3]} for row in cursor.fetchall()]
+            messages = [
+                {
+                    "message_id": row[0],
+                    "user_id": row[1],
+                    "message": row[2],
+                    "timestamp": row[3],
+                }
+                for row in cursor.fetchall()
+            ]
             cursor.close()
             return {"status": "success", "messages": messages}
         except Exception as e:
             return {"status": "error", "message": str(e)}
-        
+
     async def add_user_to_room(self, user_id, room_id):
         """Add a user to a specific room."""
         query = """
@@ -238,7 +260,9 @@ class AsyncDatabase:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
-        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_status)
+        return await asyncio.get_running_loop().run_in_executor(
+            None, execute_and_return_status
+        )
 
     async def remove_user_from_room(self, user_id, room_id):
         """Remove a user from a specific room."""
@@ -255,7 +279,9 @@ class AsyncDatabase:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
 
-        return await asyncio.get_running_loop().run_in_executor(None, execute_and_return_status)
+        return await asyncio.get_running_loop().run_in_executor(
+            None, execute_and_return_status
+        )
 
     async def get_users_in_room(self, room_id):
         """Retrieve all users in a specific room."""
