@@ -15,7 +15,7 @@ def receive_messages(client_socket, stdscr, messages, room_id, entering_room_msg
 
     while True:
         try:
-            print("loop")
+            # print("loop")
             message = client_socket.recv(4096)
             print("recieved")
             if message:
