@@ -1,16 +1,16 @@
 import sqlite3
 import asyncio
 import hashlib
-from logging import getLogger, DEBUG
+from logging import getLogger, DEBUG, INFO
 import colorlog
 
-LOG_FORMAT = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-LOG_LEVEL = DEBUG
 LOG_DATE_FORMAT = "%H:%M:%S"
+LOG_FORMAT = "%(log_color)s[%(asctime)s:%(levelname)s-%(name)s] %(message)s"
+LOG_LEVEL = INFO
 
 def setup_logger():
     handler = colorlog.StreamHandler()
-    formatter = colorlog.ColoredFormatter(LOG_FORMAT)
+    formatter = colorlog.ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     handler.setFormatter(formatter)
     
     logger = getLogger(__name__)
@@ -92,16 +92,12 @@ class AsyncDatabase:
                 row = cursor.fetchone()
                 cursor.close()
 
-                print(f"Database returned row: {row}")  # Debugging output
-
                 if not row:
                     return {"status": "error", "message": "Invalid username or password"} 
                 
                 user_id, stored_password = row
-                print(f"user_id: {user_id}, stored_password: {stored_password}")  # Debugging output
 
                 hashed_password = hashlib.sha256(password.encode()).hexdigest()
-                print(f"hashed_password: {hashed_password}")  # Debugging output
 
                 if hashed_password == stored_password:
                     return {"status": "success", "user_id": user_id}
@@ -127,10 +123,10 @@ class AsyncDatabase:
                 self.connection.commit()
                 user_id = cursor.lastrowid  # Fetch the last inserted row ID
                 cursor.close()
-                self.logger.info(f"New user added with ID: {user_id}")
+                self.logger.info(f"New user {username} added with ID: {user_id}")
                 return {"status": "success", "user_id": user_id}
             except sqlite3.IntegrityError:
-                self.logger.error("Username:{user_name} already exists")
+                self.logger.error(f"Username: {username} already exists")
                 return {"status": "error", "message": "Username already exists"}
             except Exception as e:
                 self.logger.error(f"Error adding user: {e}")
