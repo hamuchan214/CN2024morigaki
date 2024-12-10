@@ -10,26 +10,33 @@ HOST = "127.0.0.1"
 PORT = 6001
 
 
-def receive_messages(client_socket, stdscr, messages):
+def receive_messages(client_socket, stdscr, messages, room_id, entering_room_msg):
     stdscr.scrollok(True)
 
     while True:
         try:
             print("loop")
             message = client_socket.recv(4096)
-            print(message)
             print("recieved")
             if message:
                 try:
                     message = message.decode("utf-8")
                     data = json.loads(message)
-                    if data["room_id"] == room_id:
-                        messages.append(data.get("message", ""))
+                    print(data)
+                    if "action" in data.keys():
+                        print(data.get("room_id"))
+                        print(room_id)
+
+                        if data.get("room_id") == room_id:
+                            print(data.get("message"))
+                            messages.append(
+                                data.get("user_name") + ": " + data.get("message")
+                            )
                 except json.JSONDecodeError:
                     messages.append("Error: Invalid JSON received")
 
                 stdscr.clear()
-
+                stdscr.addstr(4, 0, entering_room_msg)
                 max_display_lines = curses.LINES - 7
                 start_idx = max(0, len(messages) - max_display_lines)
                 displayed_messages = messages[start_idx:]
@@ -195,7 +202,9 @@ async def start_client(stdscr):
 
     # メッセージ受信用のスレッドを開始
     threading.Thread(
-        target=receive_messages, args=(client_socket, stdscr, messages), daemon=True
+        target=receive_messages,
+        args=(client_socket, stdscr, messages, room_id, entering_room_msg),
+        daemon=True,
     ).start()
 
     try:
@@ -230,7 +239,6 @@ async def start_client(stdscr):
                 "message": msg_content,
             }
             message_result = await send_request("add_message", message, client_socket)
-            print(message_result)
             stdscr.move(curses.LINES - 2, 5)
             stdscr.clrtoeol()
             stdscr.refresh()
