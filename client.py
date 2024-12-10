@@ -9,26 +9,22 @@ import asyncio
 HOST = "127.0.0.1"
 PORT = 6001
 
-room_id = ""
-
 
 def receive_messages(client_socket, stdscr, messages):
     stdscr.scrollok(True)
-    print("recieved")
+
     while True:
         try:
-            message = client_socket.recv(1024)
-
+            print("loop")
+            message = client_socket.recv(4096)
+            print(message)
+            print("recieved")
             if message:
                 try:
                     message = message.decode("utf-8")
                     data = json.loads(message)
-                    action = data["action"]
-                    if action == "new_message":
-                        if data["room_id"] == room_id:
-                            messages.append(data.get("message", ""))
-                        else:
-                            print("defference room")
+                    if data["room_id"] == room_id:
+                        messages.append(data.get("message", ""))
                 except json.JSONDecodeError:
                     messages.append("Error: Invalid JSON received")
 
@@ -184,22 +180,22 @@ async def start_client(stdscr):
         room_id = room_result["room_id"]
         print(f"Room ID: {room_id}")
     else:
-        get_result = await send_request("join_room", create_room_data, client_socket)
-        print(get_result)
-        if get_result["status"] == "success":
-            room_id = get_result["room_id"]
+        join_result = await send_request("join_room", create_room_data, client_socket)
+        if join_result["status"] == "success":
+            room_id = join_result["room_id"]
         else:
-            sys.exit()
-    messages = []
-    max_lines = curses.LINES - 7
+            print("Failed to create room. Exiting...")
+            exit()
+    # メッセージ表示領域の管理
+    messages = []  # メッセージを保持するリスト
+    max_lines = curses.LINES - 7  # "You:"の2行上までメッセージを表示
     stdscr.refresh()
 
     entering_room_msg = f"You entering room {room}"
 
+    # メッセージ受信用のスレッドを開始
     threading.Thread(
-        target=receive_messages,
-        args=(client_socket, stdscr, messages),
-        daemon=True,
+        target=receive_messages, args=(client_socket, stdscr, messages), daemon=True
     ).start()
 
     try:
@@ -233,7 +229,8 @@ async def start_client(stdscr):
                 "room_id": room_id,
                 "message": msg_content,
             }
-            await send_request("add_message", message, client_socket)
+            message_result = await send_request("add_message", message, client_socket)
+            print(message_result)
             stdscr.move(curses.LINES - 2, 5)
             stdscr.clrtoeol()
             stdscr.refresh()
