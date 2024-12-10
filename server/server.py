@@ -12,7 +12,6 @@ LOG_DATE_FORMAT = "%H:%M:%S"
 LOG_FORMAT = "%(log_color)s[%(asctime)s:%(levelname)s-%(name)s] %(message)s"
 LOG_LEVEL = INFO
 
-
 def setup_logger():
     handler = colorlog.StreamHandler()
     formatter = colorlog.ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
@@ -127,6 +126,7 @@ class ChatServer:
                     session_id = request.get("session_id")
                     user_id = self.validate_session(session_id)
                     user_name_result = await self.db.get_username_by_user_id(user_id)
+
                     user_name = user_name_result.get("username")
                     self.logger.info(f"User name: {user_name}")
                     message_data = json.dumps(
@@ -137,6 +137,7 @@ class ChatServer:
                             "user_name": user_name,
                         }
                     )
+
                     await self.broadcast_message(message_data, loop)
                     self.logger.debug(f"Broadcasted message to room: {room_id}")
                     self.logger.debug(f"Broadcasted message: {message_data}")
@@ -218,6 +219,7 @@ class ChatServer:
                 self.logger.error(
                     f"Error creating room: {create_room_result['message']}"
                 )
+
                 return {"status": "error", "message": create_room_result["message"]}
 
         elif action == "join_room":
